@@ -74,7 +74,8 @@ describe("InboxStreamer", () => {
     expect(sendMessage).toHaveBeenCalledWith(
       {
         customType: "cccc-inbox",
-        content: "New CCCC message from alice:\n\nHello",
+        content:
+          "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: { groupId: testGroupId, eventId: "evt-1", by: "alice", text: "Hello" },
       },
@@ -290,7 +291,8 @@ describe("InboxStreamer", () => {
     expect(sendMessage).toHaveBeenCalledWith(
       {
         customType: "cccc-inbox",
-        content: "New CCCC message from bridge:\n\n(no text)",
+        content:
+          "New CCCC message from bridge:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: {
           groupId: testGroupId,
@@ -333,7 +335,8 @@ describe("InboxStreamer", () => {
     expect(sendMessage).toHaveBeenCalledWith(
       {
         customType: "cccc-inbox",
-        content: "New CCCC message from hermes:\n\nForwarded message",
+        content:
+          "New CCCC message from hermes:\n\nForwarded message\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: {
           groupId: testGroupId,
