@@ -348,4 +348,64 @@ describe("InboxStreamer", () => {
     );
     streamer.stop();
   });
+
+  test("filters out events addressed to another actor", async () => {
+    const { client, eventsStream, pi, sendMessage, onFallback } = createMocks();
+    eventsStream.mockReturnValue(
+      mockGenerator([
+        makeEventStreamItem(
+          makeEvent({ id: "evt-1", by: "alice", data: { text: "for me", to: ["test-actor"] } }),
+        ),
+        makeEventStreamItem(
+          makeEvent({ id: "evt-2", by: "bob", data: { text: "for other", to: ["other-actor"] } }),
+        ),
+      ]),
+    );
+
+    const streamer = new InboxStreamer({
+      client,
+      groupId: testGroupId,
+      actorId: testActorId,
+      pi,
+      onFallback,
+    });
+    streamer.start();
+
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining("for me") }),
+      expect.anything(),
+    );
+    streamer.stop();
+  });
+
+  test("filters out @foreman events", async () => {
+    const { client, eventsStream, pi, sendMessage, onFallback } = createMocks();
+    eventsStream.mockReturnValue(
+      mockGenerator([
+        makeEventStreamItem(
+          makeEvent({ id: "evt-1", by: "alice", data: { text: "general", to: ["@all"] } }),
+        ),
+        makeEventStreamItem(
+          makeEvent({ id: "evt-2", by: "bob", data: { text: "foreman only", to: ["@foreman"] } }),
+        ),
+      ]),
+    );
+
+    const streamer = new InboxStreamer({
+      client,
+      groupId: testGroupId,
+      actorId: testActorId,
+      pi,
+      onFallback,
+    });
+    streamer.start();
+
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining("general") }),
+      expect.anything(),
+    );
+    streamer.stop();
+  });
 });

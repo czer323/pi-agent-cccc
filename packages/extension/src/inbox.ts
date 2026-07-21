@@ -26,6 +26,30 @@ export function formatMessage(event: CCCSEvent): string {
 }
 
 /**
+ * Determine whether an event should be delivered to the given actor based on
+ * the CCCC `to` field.
+ *
+ * Rules (checked in order; first match wins):
+ * 1. `to` absent or empty → deliver (broadcast)
+ * 2. `to` contains this actorId → deliver (direct message)
+ * 3. `to` contains "@all" → deliver (broadcast)
+ * 4. `to` contains "@peers" → deliver (this actor is a peer)
+ * 5. `to` contains "@foreman" → skip (this actor is not foreman)
+ * 6. `to` contains "@user" → skip (this is for the human user)
+ * 7. Otherwise → skip (message is for another actor)
+ */
+export function shouldDeliver(event: CCCSEvent, actorId: string): boolean {
+  const to: string[] | undefined = event.data?.to as string[] | undefined;
+  if (!to || to.length === 0) return true;
+  if (to.includes(actorId)) return true;
+  if (to.includes("@all")) return true;
+  if (to.includes("@peers")) return true;
+  if (to.includes("@foreman")) return false;
+  if (to.includes("@user")) return false;
+  return false;
+}
+
+/**
  * Polls the CCCC daemon inbox on an interval and delivers new messages
  * into the Pi agent session via {@link ExtensionAPI.sendMessage}.
  *
@@ -77,6 +101,12 @@ export class InboxPoller {
 
       for (const event of events) {
         if (this.seenIds.has(event.id)) continue;
+
+        if (!shouldDeliver(event, this.options.actorId)) {
+          // Not for this actor — skip without marking read
+          this.seenIds.add(event.id);
+          continue;
+        }
 
         try {
           const raw = event.data?.text;
