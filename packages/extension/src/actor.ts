@@ -88,8 +88,10 @@ export async function ensureRegistered(
     const causeMessage = typed.cause instanceof Error ? typed.cause.message : "";
 
     const actorExists =
+      /Name already exists/i.test(message) ||
       /actor.*already (exists|registered)/i.test(message) ||
       /actor_exists/i.test(message) ||
+      /Name already exists/i.test(causeMessage) ||
       /actor.*already (exists|registered)/i.test(causeMessage) ||
       /actor_exists/i.test(causeMessage);
 
