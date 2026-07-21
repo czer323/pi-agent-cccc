@@ -43,7 +43,6 @@ export default function (pi: ExtensionAPI) {
   const connections = new Map<string, GroupConnection>();
   let inboxQueue: InboxQueue | null = null;
 
-
   /**
    * Register cccc_send and cccc_reply tools so the agent can send messages
    * and reply to events through the bridge's daemon connection.
@@ -184,6 +183,66 @@ export default function (pi: ExtensionAPI) {
         };
       },
     });
+
+    // ---- cccc_list_actors tool ----
+    pi.registerTool({
+      name: "cccc_list_actors",
+      label: "CCCC List Actors",
+      description:
+        "Lists all actors in the connected CCCC group with their ID, title, runtime, runner, and state.",
+      promptSnippet: "List actors in the current CCCC group",
+      parameters: Type.Object({}),
+      execute: async (
+        _toolCallId: string,
+        _params: Record<string, never>,
+        _signal: AbortSignal | undefined,
+        _onUpdate: unknown,
+        _ctx: unknown,
+      ) => {
+        if (connections.size === 0) {
+          return {
+            content: [{ type: "text" as const, text: "Not connected to any CCCC group" }],
+            details: {},
+          };
+        }
+        const groupId = connections.keys().next().value;
+        if (groupId == null) {
+          return {
+            content: [{ type: "text" as const, text: "Not connected to any CCCC group" }],
+            details: {},
+          };
+        }
+        if (connections.size > 1) {
+          console.warn(
+            `[cccc-bridge] Multiple groups connected; using first group "${groupId}" for cccc_list_actors.`,
+          );
+        }
+        const conn = connections.get(groupId)!;
+        const detail = await conn.client.groupShow(groupId);
+        const actors = detail.actors ?? [];
+        const lines = actors.map(
+          (a: {
+            id?: string;
+            title?: string;
+            runtime?: string;
+            runner?: string;
+            running?: boolean;
+          }) => {
+            const state = a.running ? "running" : "idle";
+            return `${a.id} | ${a.title ?? "-"} | ${a.runtime ?? "-"} | ${a.runner ?? "-"} | ${state}`;
+          },
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: lines.length ? lines.join("\n") : "No actors found in group.",
+            },
+          ],
+          details: { groupId, actorCount: actors.length },
+        };
+      },
+    });
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -217,7 +276,6 @@ export default function (pi: ExtensionAPI) {
     if (effectiveGroups.length === 0) return;
     // Create shared inbox queue for idle-gated batched delivery
     inboxQueue = new InboxQueue({ pi, ctx });
-
 
     // Detect sub-agent session: check if a parent actor already registered
     const parentActorIdForGroup = isSubAgentSession(effectiveGroups);
@@ -355,6 +413,5 @@ export default function (pi: ExtensionAPI) {
     connections.clear();
     inboxQueue?.destroy();
     inboxQueue = null;
-
   });
 }
