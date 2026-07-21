@@ -1,0 +1,144 @@
+/**
+ * Persistent TCP event stream consumer for the CCCC bridge.
+ *
+ * Replaces inbox_list polling with a long-lived events_stream connection
+ * using the cccc-sdk's {@link CCCCClient.eventsStream} async generator.
+ * Handles reconnection with exponential backoff and falls back to the
+ * polling-based {@link InboxPoller} after exhausting retries.
+ */
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { CCCCBridgeClient } from "./client.ts";
+import type { EventStreamItem } from "./types.ts";
+import type { EventStreamEvent } from "cccc-sdk";
+import { formatMessage } from "./inbox.ts";
+
+export interface InboxStreamerOptions {
+  client: CCCCBridgeClient;
+  groupId: string;
+  actorId: string;
+  pi: ExtensionAPI;
+  /** Called when stream fails after max retries. Caller starts InboxPoller as fallback. */
+  onFallback: () => void;
+  /** Shared dedup set so the fallback poller inherits seen IDs. Defaults to fresh Set. */
+  seenIds?: Set<string>;
+}
+
+const BACKOFF_DELAYS = [1_000, 2_000, 4_000, 8_000, 30_000];
+const MAX_RETRIES = BACKOFF_DELAYS.length;
+
+export class InboxStreamer {
+  readonly seenIds: Set<string>;
+
+  private _running = false;
+  private _abortController: AbortController | null = null;
+  private _options: InboxStreamerOptions;
+  private _fallbackTriggered = false;
+
+  constructor(options: InboxStreamerOptions) {
+    this._options = options;
+    this.seenIds = options.seenIds ?? new Set<string>();
+  }
+
+  get running(): boolean {
+    return this._running;
+  }
+
+  start(): void {
+    if (this._running) return;
+    this._running = true;
+    this._fallbackTriggered = false;
+    this._abortController = new AbortController();
+    this._run(0).catch((err) => console.error("[cccc-bridge] InboxStreamer fatal error:", err));
+  }
+
+  stop(): void {
+    this._running = false;
+    if (this._abortController) {
+      this._abortController.abort();
+      this._abortController = null;
+    }
+  }
+
+  private async _run(retryCount: number): Promise<void> {
+    if (!this._running) return;
+
+    const { client, groupId, actorId } = this._options;
+    const abortSignal = this._abortController!.signal;
+
+    try {
+      const stream = client.eventsStream({
+        groupId,
+        by: actorId,
+        kinds: ["chat.message"],
+        signal: abortSignal,
+      });
+
+      for await (const item of stream) {
+        if (!this._running) break;
+        this._handleItem(item);
+      }
+    } catch (err) {
+      if (!this._running) return;
+      if (abortSignal.aborted) return;
+      console.error("[cccc-bridge] Event stream error:", err);
+    }
+
+    if (!this._running) return;
+
+    if (retryCount >= MAX_RETRIES) {
+      this._triggerFallback();
+      return;
+    }
+
+    const delay = BACKOFF_DELAYS[Math.min(retryCount, BACKOFF_DELAYS.length - 1)];
+    await this._delay(delay, abortSignal);
+    if (!this._running) return;
+
+    void this._run(retryCount + 1);
+  }
+
+  private _handleItem(item: EventStreamItem): void {
+    if (item.t !== "event") return;
+    const event = (item as EventStreamEvent).event;
+
+    if (this.seenIds.has(event.id)) return;
+
+    const raw = event.data?.text;
+    const text = typeof raw === "string" ? raw : "(no text)";
+
+    this._options.pi.sendMessage(
+      {
+        customType: "cccc-inbox",
+        content: formatMessage(event),
+        display: true,
+        details: { groupId: this._options.groupId, eventId: event.id, by: event.by, text },
+      },
+      { triggerTurn: true },
+    );
+
+    this.seenIds.add(event.id);
+  }
+
+  private _delay(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+      timer.unref?.();
+    });
+  }
+
+  private _triggerFallback(): void {
+    if (this._fallbackTriggered) return;
+    this._fallbackTriggered = true;
+    console.warn("[cccc-bridge] Event stream max retries reached, falling back to polling");
+    this._options.onFallback();
+  }
+}

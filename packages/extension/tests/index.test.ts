@@ -8,6 +8,8 @@ const {
   mockConnect,
   mockDisconnect,
   mockEnsureRegistered,
+  mockStreamerStart,
+  mockStreamerStop,
   mockPollerStart,
   mockPollerStop,
 } = vi.hoisted(() => ({
@@ -15,6 +17,8 @@ const {
   mockConnect: vi.fn().mockResolvedValue(undefined),
   mockDisconnect: vi.fn(),
   mockEnsureRegistered: vi.fn(),
+  mockStreamerStart: vi.fn(),
+  mockStreamerStop: vi.fn(),
   mockPollerStart: vi.fn(),
   mockPollerStop: vi.fn(),
 }));
@@ -26,6 +30,7 @@ vi.mock("../src/config.ts", () => ({
 }));
 
 vi.mock("../src/client.ts", () => ({
+  // Must use a regular function (not arrow) so it works with `new CCCCBridgeClient()`
   CCCCBridgeClient: vi.fn(function () {
     return { connect: mockConnect, disconnect: mockDisconnect };
   }),
@@ -43,8 +48,16 @@ vi.mock("../src/actor.ts", () => ({
 }));
 
 vi.mock("../src/inbox.ts", () => ({
+  // Must use a regular function (not arrow) so it works with `new InboxPoller()`
   InboxPoller: vi.fn(function () {
     return { start: mockPollerStart, stop: mockPollerStop };
+  }),
+}));
+
+vi.mock("../src/streamer.ts", () => ({
+  // Must use a regular function (not arrow) so it works with `new InboxStreamer()`
+  InboxStreamer: vi.fn(function () {
+    return { start: mockStreamerStart, stop: mockStreamerStop };
   }),
 }));
 
@@ -112,10 +125,10 @@ test("inert when groups array is empty", async () => {
 
   expect(mockConnect).not.toHaveBeenCalled();
   expect(mockEnsureRegistered).not.toHaveBeenCalled();
-  expect(mockPollerStart).not.toHaveBeenCalled();
+  expect(mockStreamerStart).not.toHaveBeenCalled();
 });
 
-test("single group startup connects, registers, starts polling", async () => {
+test("single group startup connects, registers, starts streamer", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
@@ -131,10 +144,11 @@ test("single group startup connects, registers, starts polling", async () => {
 
   expect(mockConnect).toHaveBeenCalledTimes(1);
   expect(mockEnsureRegistered).toHaveBeenCalledTimes(1);
-  expect(mockPollerStart).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
+  expect(mockPollerStart).not.toHaveBeenCalled(); // poller only starts as fallback
 });
 
-test("multi-group startup connects, registers, starts polling per group", async () => {
+test("multi-group startup connects, registers, starts streamer per group", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
@@ -150,7 +164,8 @@ test("multi-group startup connects, registers, starts polling per group", async 
 
   expect(mockConnect).toHaveBeenCalledTimes(3);
   expect(mockEnsureRegistered).toHaveBeenCalledTimes(3);
-  expect(mockPollerStart).toHaveBeenCalledTimes(3);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(3);
+  expect(mockPollerStart).not.toHaveBeenCalled();
 });
 
 test("connection failure in one group does not block others", async () => {
@@ -162,14 +177,18 @@ test("connection failure in one group does not block others", async () => {
     pollIntervalMs: 3000,
   });
   mockEnsureRegistered.mockResolvedValue("actor-123");
+  // Second connect call fails
   mockConnect.mockRejectedValueOnce(new Error("ECONNREFUSED"));
 
   const pi = createMockPi();
   mod(pi);
   await expect(triggerSessionStart(pi)).resolves.toBeUndefined();
 
+  // Both groups tried to connect
   expect(mockConnect).toHaveBeenCalledTimes(2);
-  expect(mockPollerStart).toHaveBeenCalledTimes(1);
+  // Only one group succeeded — one streamer started
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
+  expect(mockPollerStart).not.toHaveBeenCalled();
 });
 
 test("connection failure degrades gracefully", async () => {
@@ -188,10 +207,10 @@ test("connection failure degrades gracefully", async () => {
 
   expect(mockConnect).toHaveBeenCalledTimes(1);
   expect(mockEnsureRegistered).not.toHaveBeenCalled();
-  expect(mockPollerStart).not.toHaveBeenCalled();
+  expect(mockStreamerStart).not.toHaveBeenCalled();
 });
 
-test("session_shutdown stops poller and disconnects client for single group", async () => {
+test("session_shutdown stops streamer and disconnects client for single group", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
@@ -204,15 +223,15 @@ test("session_shutdown stops poller and disconnects client for single group", as
   const pi = createMockPi();
   mod(pi);
   await triggerSessionStart(pi);
-  expect(mockPollerStart).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
 
   await triggerSessionShutdown(pi);
 
-  expect(mockPollerStop).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStop).toHaveBeenCalledTimes(1);
   expect(mockDisconnect).toHaveBeenCalledTimes(1);
 });
 
-test("session_shutdown stops all pollers and disconnects all clients for multi-group", async () => {
+test("session_shutdown stops all streamers and disconnects all clients for multi-group", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
@@ -225,11 +244,11 @@ test("session_shutdown stops all pollers and disconnects all clients for multi-g
   const pi = createMockPi();
   mod(pi);
   await triggerSessionStart(pi);
-  expect(mockPollerStart).toHaveBeenCalledTimes(2);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(2);
 
   await triggerSessionShutdown(pi);
 
-  expect(mockPollerStop).toHaveBeenCalledTimes(2);
+  expect(mockStreamerStop).toHaveBeenCalledTimes(2);
   expect(mockDisconnect).toHaveBeenCalledTimes(2);
 });
 
@@ -246,6 +265,7 @@ test("UI calls are guarded by ctx.hasUI", async () => {
   const pi = createMockPi();
   mod(pi);
 
+  // When hasUI is true, setStatus and notify should be called with success
   await triggerSessionStart(pi, true);
   expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected");
   expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (1 group)", "info");
@@ -284,5 +304,5 @@ test("UI calls notify on connection failure when hasUI is true", async () => {
   await triggerSessionStart(pi, true);
 
   expect(pi._notify).toHaveBeenCalled();
-  expect(pi._setStatus).not.toHaveBeenCalled();
+  expect(pi._setStatus).not.toHaveBeenCalled(); // no connections succeeded
 });
