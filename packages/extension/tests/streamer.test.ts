@@ -77,7 +77,13 @@ describe("InboxStreamer", () => {
         content:
           "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
-        details: { groupId: testGroupId, eventId: "evt-1", by: "alice", text: "Hello" },
+        details: {
+          actorId: testActorId,
+          groupId: testGroupId,
+          eventId: "evt-1",
+          by: "alice",
+          text: "Hello",
+        },
       },
       { triggerTurn: true },
     );
@@ -295,6 +301,7 @@ describe("InboxStreamer", () => {
           "New CCCC message from bridge:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: {
+          actorId: testActorId,
           groupId: testGroupId,
           eventId: "evt-receipt-1",
           by: "bridge",
@@ -339,6 +346,7 @@ describe("InboxStreamer", () => {
           "New CCCC message from hermes:\n\nForwarded message\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: {
+          actorId: testActorId,
           groupId: testGroupId,
           eventId: "evt-fwd-1",
           by: "hermes",

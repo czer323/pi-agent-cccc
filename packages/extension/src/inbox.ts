@@ -117,6 +117,7 @@ export class InboxPoller {
               content: formatMessage(event),
               display: true,
               details: {
+                actorId: this.options.actorId,
                 groupId: this.options.groupId,
                 eventId: event.id,
                 by: event.by,

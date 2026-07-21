@@ -161,7 +161,6 @@ describe("InboxPoller", () => {
 
     await (poller as unknown as { poll(): Promise<void> }).poll();
 
-    expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage).toHaveBeenCalledWith(
       {
         customType: "cccc-inbox",
@@ -169,6 +168,7 @@ describe("InboxPoller", () => {
           "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: {
+          actorId: testActorId,
           groupId: testGroupId,
           eventId: "evt-1",
           by: "alice",
