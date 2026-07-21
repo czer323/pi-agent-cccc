@@ -29,8 +29,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# AI agent worktrees
+# AI agent worktrees (isolated workspaces for subagents)
+.worktrees/
 .claude/worktrees/
-
 # bv (beads viewer) local config and caches
 .bv/

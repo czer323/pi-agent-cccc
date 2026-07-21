@@ -59,6 +59,34 @@ All changes live in branches. `main` is always deployable.
 
 Three roles handle the work cycle. An agent may fill any role — read the REQUIRED documents before starting. All roles MUST read the required documentation for their role.
 
+## CRITICAL: Worktree Isolation
+
+**Every agent that makes code changes MUST work in an isolated git worktree.**
+No exceptions. This prevents parallel agents from interfering with each other.
+
+Before making ANY file changes:
+
+```bash
+# Create an isolated worktree from main
+git worktree add .worktrees/<branch-name> -b <branch-name>
+cd .worktrees/<branch-name>
+
+# Install dependencies if needed
+pnpm install
+```
+
+All implementation, tests, and commits happen inside the worktree.
+When done, push the branch, create a PR, merge it, then clean up:
+
+```bash
+cd ~/projects/pi-agent-cccc
+git worktree remove .worktrees/<branch-name>
+```
+
+**Never** make changes directly in `~/projects/pi-agent-cccc` (the main checkout).
+**Never** run `git checkout` or `git branch` in the main checkout.
+The main checkout is shared — only the worktree is yours.
+
 ## Subagent Dispatch Preamble
 
 Every subagent task assignment (Planner → Implementer, Implementer → Reviewer,
