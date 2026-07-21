@@ -5,6 +5,7 @@ import mod from "../src/index.ts";
 
 const {
   mockRegisterActor,
+  mockReply,
   mockSend,
   mockLoadConfig,
   mockConnect,
@@ -28,7 +29,8 @@ const {
   mockDiscoverGroups: vi.fn(),
   mockActorRemove: vi.fn().mockResolvedValue(undefined),
   mockRegisterActor: vi.fn().mockResolvedValue({ actorId: "child-actor-id" }),
-  mockSend: vi.fn().mockResolvedValue({ event_id: "evt-1" }),
+  mockReply: vi.fn().mockResolvedValue({ event: { id: "reply-evt-1" }, ack_event: null }),
+  mockSend: vi.fn().mockResolvedValue({ event: { id: "evt-1" }, ack_event: null }),
 }));
 
 // ---------- module mocks ----------
@@ -44,8 +46,10 @@ vi.mock("../src/client.ts", () => ({
       connect: mockConnect,
       disconnect: mockDisconnect,
       registerActor: mockRegisterActor,
+  mockReply,
       actorRemove: mockActorRemove,
       send: mockSend,
+      reply: mockReply,
     };
   }),
   BridgeClientError: class BridgeClientError extends Error {
@@ -84,6 +88,8 @@ vi.mock("../src/discovery.ts", () => ({
 beforeEach(() => {
   vi.resetAllMocks();
   mockConnect.mockResolvedValue(undefined);
+  mockSend.mockResolvedValue({ event: { id: "evt-1" }, ack_event: null });
+  mockReply.mockResolvedValue({ event: { id: "reply-evt-1" }, ack_event: null });
   // Clean any CCCC_PARENT_ACTOR_* env vars between tests
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("CCCC_PARENT_ACTOR_")) {
@@ -96,13 +102,18 @@ function createMockPi() {
   const handlers = new Map<string, Function>();
   const notify = vi.fn();
   const setStatus = vi.fn();
+  const registeredTools: any[] = [];
   const pi: Record<string, unknown> = {
     on: vi.fn((event: string, handler: Function) => {
       handlers.set(event, handler);
     }),
+    registerTool: vi.fn((tool: any) => {
+      registeredTools.push(tool);
+    }),
     _handlers: handlers,
     _notify: notify,
     _setStatus: setStatus,
+    _registeredTools: registeredTools,
   };
   return pi as any;
 }
@@ -641,4 +652,235 @@ test("parent session sets env var for future sub-agents", async () => {
 
   // Parent session should set env var for sub-agents
   expect(process.env["CCCC_PARENT_ACTOR_test-group"]).toBe("parent-actor-123");
+});
+
+// ---------- tool registration tests ----------
+
+test("registers cccc_send and cccc_reply tools on parent session_start", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(pi.registerTool).toHaveBeenCalledTimes(2);
+  const toolNames = pi._registeredTools.map((t: any) => t.name);
+  expect(toolNames).toContain("cccc_send");
+  expect(toolNames).toContain("cccc_reply");
+});
+
+test("cccc_send tool has correct parameter schema", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const sendTool = pi._registeredTools.find((t: any) => t.name === "cccc_send");
+  expect(sendTool).toBeDefined();
+  // parameters is a TypeBox schema object with property shape
+  const props = sendTool.parameters.properties;
+  expect(props).toBeDefined();
+  expect(props.text).toBeDefined();
+  expect(props.groupId).toBeDefined();
+  expect(props.to).toBeDefined();
+});
+
+test("cccc_send tool execute calls client.send with correct parameters", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const sendTool = pi._registeredTools.find((t: any) => t.name === "cccc_send");
+  const result = await sendTool.execute("call-1", { text: "hello" }, undefined, undefined, {});
+
+  expect(mockSend).toHaveBeenCalledWith({
+    groupId: "test-group",
+    text: "hello",
+    to: undefined,
+  });
+  expect(result.content[0].text).toContain("Message sent");
+  expect(result.details.eventId).toBe("evt-1");
+});
+
+test("cccc_send tool respects custom groupId and to parameters", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["group-a", "group-b"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const sendTool = pi._registeredTools.find((t: any) => t.name === "cccc_send");
+  await sendTool.execute(
+    "call-1",
+    { text: "hi", groupId: "group-b", to: "@all" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  expect(mockSend).toHaveBeenCalledWith({
+    groupId: "group-b",
+    text: "hi",
+    to: ["@all"],
+  });
+});
+
+test("cccc_reply tool has correct parameter schema", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const replyTool = pi._registeredTools.find((t: any) => t.name === "cccc_reply");
+  expect(replyTool).toBeDefined();
+  const props = replyTool.parameters.properties;
+  expect(props).toBeDefined();
+  expect(props.text).toBeDefined();
+  expect(props.eventId).toBeDefined();
+  expect(props.groupId).toBeDefined();
+});
+
+test("cccc_reply tool execute calls client.reply with correct parameters", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const replyTool = pi._registeredTools.find((t: any) => t.name === "cccc_reply");
+  const result = await replyTool.execute(
+    "call-1",
+    { text: "thanks", eventId: "evt-original" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  expect(mockReply).toHaveBeenCalledWith({
+    groupId: "test-group",
+    replyTo: "evt-original",
+    text: "thanks",
+  });
+  expect(result.content[0].text).toContain("Reply sent");
+  expect(result.details.eventId).toBe("reply-evt-1");
+});
+
+test("cccc_send returns error when group not connected", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const sendTool = pi._registeredTools.find((t: any) => t.name === "cccc_send");
+  const result = await sendTool.execute(
+    "call-1",
+    { text: "hello", groupId: "nonexistent-group" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  expect(result.content[0].text).toContain("Error");
+  expect(mockSend).not.toHaveBeenCalled();
+});
+
+test("cccc_reply returns error when group not connected", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const replyTool = pi._registeredTools.find((t: any) => t.name === "cccc_reply");
+  const result = await replyTool.execute(
+    "call-1",
+    { text: "thanks", eventId: "evt-1", groupId: "nonexistent-group" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  expect(result.content[0].text).toContain("Error");
+  expect(mockReply).not.toHaveBeenCalled();
+});
+
+test("tools registered in sub-agent sessions", async () => {
+  process.env["CCCC_PARENT_ACTOR_test-group"] = "parent-actor-123";
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(pi.registerTool).toHaveBeenCalled();
+  const toolNames = pi._registeredTools.map((t: any) => t.name);
+  expect(toolNames).toContain("cccc_send");
+  expect(toolNames).toContain("cccc_reply");
 });

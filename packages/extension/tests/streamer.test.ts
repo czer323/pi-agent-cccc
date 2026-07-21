@@ -75,7 +75,7 @@ describe("InboxStreamer", () => {
       {
         customType: "cccc-inbox",
         content:
-          "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
+          "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: { groupId: testGroupId, eventId: "evt-1", by: "alice", text: "Hello" },
       },
@@ -292,7 +292,7 @@ describe("InboxStreamer", () => {
       {
         customType: "cccc-inbox",
         content:
-          "New CCCC message from bridge:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
+          "New CCCC message from bridge:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: {
           groupId: testGroupId,
@@ -336,7 +336,7 @@ describe("InboxStreamer", () => {
       {
         customType: "cccc-inbox",
         content:
-          "New CCCC message from hermes:\n\nForwarded message\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
+          "New CCCC message from hermes:\n\nForwarded message\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: {
           groupId: testGroupId,

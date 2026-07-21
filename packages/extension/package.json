@@ -20,11 +20,16 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "latest",
+    "@sinclair/typebox": "catalog:",
     "@types/node": "catalog:",
     "bumpp": "^11.1.0",
     "typescript": "^7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@sinclair/typebox": "*"
   },
   "pi": {
     "extensions": [

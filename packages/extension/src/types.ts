@@ -8,6 +8,7 @@ import type {
   EventStreamItem,
   GroupsResult,
   GroupShowResult,
+  ReplyOptions,
   SendCrossGroupOptions,
   SendOptions,
   SendResult,
@@ -43,6 +44,7 @@ export interface CCCCClientLike {
   eventsStream(options: EventsStreamOptions): AsyncGenerator<EventStreamItem>;
   groups(): Promise<GroupsResult>;
   send(options: SendOptions): Promise<SendResult>;
+  reply(options: ReplyOptions): Promise<SendResult>;
   sendCrossGroup(options: SendCrossGroupOptions): Promise<SendResult>;
   groupShow(groupId: string): Promise<GroupShowResult>;
 }
@@ -51,6 +53,7 @@ export type {
   CCCSEvent,
   GroupsResult,
   GroupShowResult,
+  ReplyOptions,
   SendOptions,
   SendResult,
   SendCrossGroupOptions,
