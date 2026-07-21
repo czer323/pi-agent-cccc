@@ -4,6 +4,8 @@ import mod from "../src/index.ts";
 // ---------- hoisted mock fns (shared between vi.mock factories and tests) ----------
 
 const {
+  mockRegisterActor,
+  mockSend,
   mockLoadConfig,
   mockConnect,
   mockDisconnect,
@@ -23,6 +25,8 @@ const {
   mockPollerStart: vi.fn(),
   mockPollerStop: vi.fn(),
   mockDiscoverGroups: vi.fn(),
+  mockRegisterActor: vi.fn().mockResolvedValue({ actorId: "child-actor-id" }),
+  mockSend: vi.fn().mockResolvedValue({ event_id: "evt-1" }),
 }));
 
 // ---------- module mocks ----------
@@ -34,7 +38,12 @@ vi.mock("../src/config.ts", () => ({
 vi.mock("../src/client.ts", () => ({
   // Must use a regular function (not arrow) so it works with `new CCCCBridgeClient()`
   CCCCBridgeClient: vi.fn(function () {
-    return { connect: mockConnect, disconnect: mockDisconnect };
+    return {
+      connect: mockConnect,
+      disconnect: mockDisconnect,
+      registerActor: mockRegisterActor,
+      send: mockSend,
+    };
   }),
   BridgeClientError: class BridgeClientError extends Error {
     constructor(m: string) {
@@ -72,6 +81,12 @@ vi.mock("../src/discovery.ts", () => ({
 beforeEach(() => {
   vi.resetAllMocks();
   mockConnect.mockResolvedValue(undefined);
+  // Clean any CCCC_PARENT_ACTOR_* env vars between tests
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith("CCCC_PARENT_ACTOR_")) {
+      delete process.env[key];
+    }
+  }
 });
 
 function createMockPi() {
@@ -472,4 +487,126 @@ test("explicit groups take precedence over auto-discovery", async () => {
   expect(mockDiscoverGroups).not.toHaveBeenCalled();
   expect(mockConnect).toHaveBeenCalledTimes(1);
   expect(mockStreamerStart).toHaveBeenCalledTimes(1);
+});
+
+// ---------- sub-agent tests ----------
+
+test("sub-agent detects parent via env var and registers child actor", async () => {
+  process.env["CCCC_PARENT_ACTOR_test-group"] = "parent-actor-123";
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  // Connect should be called
+  expect(mockConnect).toHaveBeenCalledTimes(1);
+  // registerActor should be called for child registration
+  expect(mockRegisterActor).toHaveBeenCalledTimes(1);
+  expect(mockRegisterActor).toHaveBeenCalledWith(
+    expect.objectContaining({
+      groupId: "test-group",
+      runtime: "custom",
+      runner: "headless",
+      title: "Pi Sub-Agent",
+    }),
+  );
+  // send should announce to parent
+  expect(mockSend).toHaveBeenCalledTimes(1);
+  expect(mockSend).toHaveBeenCalledWith(
+    expect.objectContaining({
+      groupId: "test-group",
+      to: ["parent-actor-123"],
+    }),
+  );
+  // Should NOT start streamer/poller (sub-agent is ephemeral)
+  expect(mockStreamerStart).not.toHaveBeenCalled();
+  expect(mockPollerStart).not.toHaveBeenCalled();
+  // Should NOT call ensureRegistered (uses parent env var route)
+  expect(mockEnsureRegistered).not.toHaveBeenCalled();
+});
+
+test("sub-agent skips groups without parent env var", async () => {
+  // Only set parent for one group out of two
+  process.env["CCCC_PARENT_ACTOR_group-a"] = "parent-a";
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["group-a", "group-b"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  // Should only process group-a (has parent env var)
+  expect(mockConnect).toHaveBeenCalledTimes(1);
+  expect(mockRegisterActor).toHaveBeenCalledTimes(1);
+  expect(mockRegisterActor).toHaveBeenCalledWith(expect.objectContaining({ groupId: "group-a" }));
+  expect(mockSend).toHaveBeenCalledTimes(1);
+});
+
+test("sub-agent child actor ID derives from parent", async () => {
+  process.env["CCCC_PARENT_ACTOR_test-group"] = "parent-actor-123";
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockRegisterActor).toHaveBeenCalledTimes(1);
+  const callArg = mockRegisterActor.mock.calls[0][0];
+  expect(callArg.actorId).toMatch(/^parent-actor-123-child-/);
+});
+
+test("sub-agent failure does not crash", async () => {
+  process.env["CCCC_PARENT_ACTOR_test-group"] = "parent-actor-123";
+  mockConnect.mockRejectedValue(new Error("ECONNREFUSED"));
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  await expect(triggerSessionStart(pi)).resolves.toBeUndefined();
+
+  expect(mockConnect).toHaveBeenCalledTimes(1);
+  expect(mockRegisterActor).not.toHaveBeenCalled();
+  expect(mockSend).not.toHaveBeenCalled();
+});
+
+test("parent session sets env var for future sub-agents", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("parent-actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  // Parent session should set env var for sub-agents
+  expect(process.env["CCCC_PARENT_ACTOR_test-group"]).toBe("parent-actor-123");
 });
