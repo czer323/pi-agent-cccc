@@ -33,6 +33,7 @@ export class InboxStreamer {
   private _running = false;
   private _abortController: AbortController | null = null;
   private _options: InboxStreamerOptions;
+  private _lastError: string | null = null;
   private _fallbackTriggered = false;
 
   constructor(options: InboxStreamerOptions) {
@@ -73,6 +74,7 @@ export class InboxStreamer {
         kinds: ["chat.message", "chat.cross_group_receipt"],
         signal: abortSignal,
       });
+      this._lastError = null;
 
       for await (const item of stream) {
         if (!this._running) break;
@@ -81,7 +83,11 @@ export class InboxStreamer {
     } catch (err) {
       if (!this._running) return;
       if (abortSignal.aborted) return;
-      console.error("[cccc-bridge] Event stream error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg !== this._lastError) {
+        console.error("[cccc-bridge] Event stream error:", msg);
+        this._lastError = msg;
+      }
     }
 
     if (!this._running) return;
