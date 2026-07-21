@@ -14,7 +14,7 @@ vi.mock("node:fs", () => ({
 const baseConfig: BridgeConfig = {
   daemonHost: "192.168.7.163",
   daemonPort: 9765,
-  groupId: "test-group",
+  groups: ["test-group"],
   actorId: null,
   pollIntervalMs: 3000,
 };
