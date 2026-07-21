@@ -40,17 +40,23 @@ function createMocks() {
 describe("formatMessage", () => {
   test("produces correct output with text", () => {
     const event = makeEvent({ id: "evt-1", by: "alice", data: { text: "Hello world" } });
-    expect(formatMessage(event)).toBe("New CCCC message from alice:\n\nHello world");
+    expect(formatMessage(event)).toBe(
+      "New CCCC message from alice:\n\nHello world\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
+    );
   });
 
   test("handles missing text with fallback", () => {
     const event = makeEvent({ id: "evt-2", by: "bob", data: {} });
-    expect(formatMessage(event)).toBe("New CCCC message from bob:\n\n(no text)");
+    expect(formatMessage(event)).toBe(
+      "New CCCC message from bob:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
+    );
   });
 
   test("handles null text with fallback", () => {
     const event = makeEvent({ id: "evt-3", by: "carol", data: { text: null } });
-    expect(formatMessage(event)).toBe("New CCCC message from carol:\n\n(no text)");
+    expect(formatMessage(event)).toBe(
+      "New CCCC message from carol:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
+    );
   });
 });
 
@@ -159,7 +165,8 @@ describe("InboxPoller", () => {
     expect(sendMessage).toHaveBeenCalledWith(
       {
         customType: "cccc-inbox",
-        content: "New CCCC message from alice:\n\nHello",
+        content:
+          "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.",
         display: true,
         details: {
           groupId: testGroupId,
