@@ -26,9 +26,7 @@ Extension source lives in `packages/extension/` under the repo root:
 .                              # repo root
   packages/extension/          # extension source
     package.json               # deps + "pi.extensions" manifest
-    vite.config.ts             # Vite Plus (vp) configuration
     tsconfig.json              # strict TypeScript config
-    oxlintrc.json              # oxlint rules
     src/
       index.ts                 # entry point (default export factory)
       client.ts                # CCCC daemon client wrapper

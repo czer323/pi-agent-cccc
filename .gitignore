@@ -31,3 +31,6 @@ dist-ssr
 
 # AI agent worktrees
 .claude/worktrees/
+
+# bv (beads viewer) local config and caches
+.bv/
