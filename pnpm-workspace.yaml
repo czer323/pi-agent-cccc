@@ -10,3 +10,9 @@ catalog:
   typescript: ^7.0.0
   vite: npm:@voidzero-dev/vite-plus-core@^0.2.5
   vite-plus: ^0.2.5
+
+allowBuilds:
+  "@google/genai": set this to true or false
+  protobufjs: set this to true or false
+
+onlyBuiltDependencies: "@google/genai"
