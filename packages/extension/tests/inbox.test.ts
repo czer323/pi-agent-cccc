@@ -64,43 +64,72 @@ describe("shouldDeliver", () => {
   });
 
   test("delivers when `to` is empty array (broadcast)", () => {
-    expect(shouldDeliver(makeEvent({ id: "e2", data: { text: "hi", to: [] } }), actorId)).toBe(true);
+    expect(shouldDeliver(makeEvent({ id: "e2", data: { text: "hi", to: [] } }), actorId)).toBe(
+      true,
+    );
   });
 
   test("delivers when `to` contains this actorId (direct message)", () => {
-    expect(shouldDeliver(makeEvent({ id: "e3", data: { text: "hi", to: ["my-actor"] } }), actorId)).toBe(true);
+    expect(
+      shouldDeliver(makeEvent({ id: "e3", data: { text: "hi", to: ["my-actor"] } }), actorId),
+    ).toBe(true);
   });
 
   test("delivers when `to` contains a different actorId first and ours second", () => {
-    expect(shouldDeliver(makeEvent({ id: "e4", data: { text: "hi", to: ["other-actor", "my-actor"] } }), actorId)).toBe(true);
+    expect(
+      shouldDeliver(
+        makeEvent({ id: "e4", data: { text: "hi", to: ["other-actor", "my-actor"] } }),
+        actorId,
+      ),
+    ).toBe(true);
   });
 
-  test("delivers when `to` contains \"@all\" (broadcast)", () => {
-    expect(shouldDeliver(makeEvent({ id: "e5", data: { text: "hi", to: ["@all"] } }), actorId)).toBe(true);
+  test('delivers when `to` contains "@all" (broadcast)', () => {
+    expect(
+      shouldDeliver(makeEvent({ id: "e5", data: { text: "hi", to: ["@all"] } }), actorId),
+    ).toBe(true);
   });
 
-  test("delivers when `to` contains \"@peers\"", () => {
-    expect(shouldDeliver(makeEvent({ id: "e6", data: { text: "hi", to: ["@peers"] } }), actorId)).toBe(true);
+  test('delivers when `to` contains "@peers"', () => {
+    expect(
+      shouldDeliver(makeEvent({ id: "e6", data: { text: "hi", to: ["@peers"] } }), actorId),
+    ).toBe(true);
   });
 
-  test("skips when `to` contains \"@foreman\"", () => {
-    expect(shouldDeliver(makeEvent({ id: "e7", data: { text: "hi", to: ["@foreman"] } }), actorId)).toBe(false);
+  test('skips when `to` contains "@foreman"', () => {
+    expect(
+      shouldDeliver(makeEvent({ id: "e7", data: { text: "hi", to: ["@foreman"] } }), actorId),
+    ).toBe(false);
   });
 
-  test("skips when `to` contains \"@user\"", () => {
-    expect(shouldDeliver(makeEvent({ id: "e8", data: { text: "hi", to: ["@user"] } }), actorId)).toBe(false);
+  test('skips when `to` contains "@user"', () => {
+    expect(
+      shouldDeliver(makeEvent({ id: "e8", data: { text: "hi", to: ["@user"] } }), actorId),
+    ).toBe(false);
   });
 
   test("skips when `to` contains only another actor's ID", () => {
-    expect(shouldDeliver(makeEvent({ id: "e9", data: { text: "hi", to: ["other-actor"] } }), actorId)).toBe(false);
+    expect(
+      shouldDeliver(makeEvent({ id: "e9", data: { text: "hi", to: ["other-actor"] } }), actorId),
+    ).toBe(false);
   });
 
   test("skips when `to` contains multiple non-matching entries", () => {
-    expect(shouldDeliver(makeEvent({ id: "e10", data: { text: "hi", to: ["@foreman", "@user"] } }), actorId)).toBe(false);
+    expect(
+      shouldDeliver(
+        makeEvent({ id: "e10", data: { text: "hi", to: ["@foreman", "@user"] } }),
+        actorId,
+      ),
+    ).toBe(false);
   });
 
   test("@all takes priority over other roles", () => {
-    expect(shouldDeliver(makeEvent({ id: "e11", data: { text: "hi", to: ["@all", "@foreman"] } }), actorId)).toBe(true);
+    expect(
+      shouldDeliver(
+        makeEvent({ id: "e11", data: { text: "hi", to: ["@all", "@foreman"] } }),
+        actorId,
+      ),
+    ).toBe(true);
   });
 });
 
