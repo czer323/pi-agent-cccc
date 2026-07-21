@@ -28,9 +28,16 @@ function mockClient() {
 // ---- generateActorId ----
 
 describe("generateActorId", () => {
-  test("produces expected format: pi-<hostname>-<6-hex-chars>", () => {
+  test("produces expected format with explicit params", () => {
+    const id = generateActorId({ role: "pi", machine: "truenas", project: "pi-agent-cccc" });
+    expect(id).toBe("pi-truenas-pi-agent-cccc");
+  });
+
+  test("defaults role to pi and uses real hostname/project", () => {
     const id = generateActorId();
-    expect(id).toMatch(/^pi-[a-zA-Z0-9]+-[0-9a-f]{6}$/);
+    expect(id).toMatch(/^pi-/);
+    // Should have at least two hyphens: role-machine-project
+    expect(id.split("-").length).toBeGreaterThanOrEqual(3);
   });
 });
 

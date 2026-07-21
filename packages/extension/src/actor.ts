@@ -7,20 +7,46 @@
  * 3. Auto-generated ID
  */
 
-import { createHash } from "node:crypto";
+import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import { basename } from "node:path";
 import type { BridgeConfig } from "./config.ts";
 import type { CCCCBridgeClient } from "./client.ts";
 
 /**
- * Generate a deterministic actor ID in the format:
- * `pi-<hostname-short>-<6-char-sha256-hex-of-cwd>`
+ * Derive the project name from git repo root (or cwd basename as fallback).
  */
-export function generateActorId(): string {
-  const hostname = os.hostname().split(".")[0];
-  const hash = createHash("sha256").update(process.cwd()).digest("hex").slice(0, 6);
-  return `pi-${hostname}-${hash}`;
+function getProjectName(): string {
+  try {
+    const repoRoot = execSync("git rev-parse --show-toplevel", {
+      encoding: "utf-8",
+      timeout: 5000,
+    }).trim();
+    return basename(repoRoot);
+  } catch {
+    return basename(process.cwd());
+  }
+}
+
+/**
+ * Generate a deterministic actor ID in the format:
+ * `<role>-<machine>-<project>`
+ *
+ * @param opts - Optional overrides for role, machine, and project.
+ *   - `role`: from `CCCC_AGENT_ROLE` env, defaults to `"pi"`
+ *   - `machine`: short hostname
+ *   - `project`: git repo basename or cwd basename
+ */
+export function generateActorId(opts?: {
+  role?: string;
+  machine?: string;
+  project?: string;
+}): string {
+  const role = opts?.role ?? process.env.CCCC_AGENT_ROLE ?? "pi";
+  const machine = opts?.machine ?? os.hostname().split(".")[0];
+  const project = opts?.project ?? getProjectName();
+  return `${role}-${machine}-${project}`;
 }
 
 /**
