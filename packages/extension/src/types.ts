@@ -8,6 +8,8 @@ import type {
   EventStreamItem,
   GroupsResult,
   GroupShowResult,
+  SendCrossGroupOptions,
+  SendResult,
 } from "cccc-sdk";
 
 /**
@@ -38,10 +40,11 @@ export interface CCCCClientLike {
   ): Promise<Record<string, unknown>>;
   eventsStream(options: EventsStreamOptions): AsyncGenerator<EventStreamItem>;
   groups(): Promise<GroupsResult>;
+  sendCrossGroup(options: SendCrossGroupOptions): Promise<SendResult>;
   groupShow(groupId: string): Promise<GroupShowResult>;
 }
 
-export type { CCCSEvent, GroupsResult, GroupShowResult };
+export type { CCCSEvent, GroupsResult, GroupShowResult, SendCrossGroupOptions, SendResult };
 
 /**
  * Typed error thrown by CCCCBridgeClient when an SDK operation fails.

@@ -70,7 +70,7 @@ export class InboxStreamer {
       const stream = client.eventsStream({
         groupId,
         by: actorId,
-        kinds: ["chat.message"],
+        kinds: ["chat.message", "chat.cross_group_receipt"],
         signal: abortSignal,
       });
 
@@ -107,12 +107,32 @@ export class InboxStreamer {
     const raw = event.data?.text;
     const text = typeof raw === "string" ? raw : "(no text)";
 
+    // Extract cross-group provenance when present
+    const data = event.data ?? {};
+    const srcGroupId =
+      (data.src_group_id as string | undefined) ??
+      (event.kind === "chat.cross_group_receipt" ? this._options.groupId : undefined);
+    const srcEventId =
+      (data.src_event_id as string | undefined) ??
+      (event.kind === "chat.cross_group_receipt"
+        ? (data.source_event_id as string | undefined)
+        : undefined);
+
+    const details: Record<string, unknown> = {
+      groupId: this._options.groupId,
+      eventId: event.id,
+      by: event.by,
+      text,
+    };
+    if (srcGroupId) details.srcGroupId = srcGroupId;
+    if (srcEventId) details.srcEventId = srcEventId;
+
     this._options.pi.sendMessage(
       {
         customType: "cccc-inbox",
         content: formatMessage(event),
         display: true,
-        details: { groupId: this._options.groupId, eventId: event.id, by: event.by, text },
+        details,
       },
       { triggerTurn: true },
     );

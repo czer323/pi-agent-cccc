@@ -105,9 +105,9 @@ export default function (pi: ExtensionAPI) {
 
     const connectedCount = connections.size;
     if (ctx.hasUI && connectedCount > 0) {
-      ctx.ui.setStatus("cccc", "connected");
+      ctx.ui.setStatus("cccc", "connected (group bridge)");
       ctx.ui.notify(
-        `CCCC bridge connected (${connectedCount} group${connectedCount !== 1 ? "s" : ""})`,
+        `CCCC bridge connected (${connectedCount} group${connectedCount !== 1 ? "s" : ""}) — Group Bridge enabled`,
         "info",
       );
     }
