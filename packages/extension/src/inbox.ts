@@ -1,13 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CCCCBridgeClient } from "./client.ts";
 import type { CCCSEvent } from "./types.ts";
-
+import type { InboxQueue } from "./inbox-queue.ts";
 export interface InboxPollerOptions {
   client: CCCCBridgeClient;
   groupId: string;
   actorId: string;
   pollIntervalMs: number;
-  pi: ExtensionAPI;
+  queue: InboxQueue;
   /** Shared deduplication set (e.g. from InboxStreamer) for fallback continuity. */
   seenIds?: Set<string>;
 }
@@ -107,43 +107,36 @@ export class InboxPoller {
           this.seenIds.add(event.id);
           continue;
         }
-
         try {
           const raw = event.data?.text;
           const text = typeof raw === "string" ? raw : "(no text)";
-          this.options.pi.sendMessage(
-            {
-              customType: "cccc-inbox",
-              content: formatMessage(event),
-              display: true,
-              details: {
-                actorId: this.options.actorId,
-                groupId: this.options.groupId,
-                eventId: event.id,
-                by: event.by,
-                text,
-              },
+
+          this.options.queue.enqueue({
+            content: formatMessage(event),
+            details: {
+              actorId: this.options.actorId,
+              groupId: this.options.groupId,
+              eventId: event.id,
+              by: event.by,
+              text,
             },
-            { triggerTurn: true },
-          );
-        } catch (deliveryErr) {
-          console.error(`[cccc-bridge] Failed to deliver message ${event.id}:`, deliveryErr);
-          // Skip mark-read on delivery failure so it can be retried
+            onDelivered: () => {
+              // Mark as read on the server after successful delivery
+              this.options.client.inboxMarkRead({
+                groupId: this.options.groupId,
+                actorId: this.options.actorId,
+                eventId: event.id,
+              }).catch((markErr) => {
+                console.error(`[cccc-bridge] Failed to mark message ${event.id} as read:`, markErr);
+              });
+            },
+          });
+        } catch (enqueueErr) {
+          console.error(`[cccc-bridge] Failed to enqueue message ${event.id}:`, enqueueErr);
           continue;
         }
 
         this.seenIds.add(event.id);
-
-        try {
-          await this.options.client.inboxMarkRead({
-            groupId: this.options.groupId,
-            actorId: this.options.actorId,
-            eventId: event.id,
-          });
-        } catch (markErr) {
-          console.error(`[cccc-bridge] Failed to mark message ${event.id} as read:`, markErr);
-          // Non-fatal — continue polling
-        }
       }
     } catch (pollErr) {
       console.error("[cccc-bridge] Inbox poll failed:", pollErr);

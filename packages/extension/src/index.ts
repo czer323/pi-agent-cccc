@@ -7,6 +7,7 @@ import { ensureRegistered } from "./actor.ts";
 import { discoverGroups } from "./discovery.ts";
 import { InboxPoller } from "./inbox.ts";
 import { InboxStreamer } from "./streamer.ts";
+import { InboxQueue } from "./inbox-queue.ts";
 import { randomUUID } from "node:crypto";
 
 const PARENT_ACTOR_ENV_PREFIX = "CCCC_PARENT_ACTOR_";
@@ -40,6 +41,8 @@ function deriveChildActorId(parentActorId: string): string {
 
 export default function (pi: ExtensionAPI) {
   const connections = new Map<string, GroupConnection>();
+  let inboxQueue: InboxQueue | null = null;
+
 
   /**
    * Register cccc_send and cccc_reply tools so the agent can send messages
@@ -212,6 +215,9 @@ export default function (pi: ExtensionAPI) {
 
     // If no groups resolved, remain inert
     if (effectiveGroups.length === 0) return;
+    // Create shared inbox queue for idle-gated batched delivery
+    inboxQueue = new InboxQueue({ pi, ctx });
+
 
     // Detect sub-agent session: check if a parent actor already registered
     const parentActorIdForGroup = isSubAgentSession(effectiveGroups);
@@ -279,7 +285,7 @@ export default function (pi: ExtensionAPI) {
               groupId,
               actorId,
               pollIntervalMs: config.pollIntervalMs,
-              pi,
+              queue: inboxQueue!,
               seenIds,
             });
             poller.start();
@@ -290,12 +296,11 @@ export default function (pi: ExtensionAPI) {
             client,
             groupId,
             actorId,
-            pi,
+            queue: inboxQueue!,
             onFallback: startPoller,
             seenIds,
           });
           streamer.start();
-
           connections.set(groupId, { client, streamer, poller, actorId });
         } catch (err) {
           // Graceful degradation — per-group failure doesn't block other groups
@@ -327,6 +332,10 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
+  pi.on("agent_end", async () => {
+    inboxQueue?.wake();
+  });
+
   pi.on("session_shutdown", async () => {
     for (const [groupId, conn] of connections) {
       conn.streamer?.stop();
@@ -344,5 +353,8 @@ export default function (pi: ExtensionAPI) {
       console.log(`[cccc-bridge] Disconnected group "${groupId}"`);
     }
     connections.clear();
+    inboxQueue?.destroy();
+    inboxQueue = null;
+
   });
 }
