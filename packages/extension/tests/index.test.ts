@@ -288,8 +288,8 @@ test("UI calls are guarded by ctx.hasUI", async () => {
 
   // When hasUI is true, setStatus and notify should be called with success
   await triggerSessionStart(pi, true);
-  expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected (group bridge)");
-  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (1 group) — Group Bridge enabled", "info");
+  expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected");
+  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (1 group)", "info");
 });
 
 test("UI notifies for multi-group connection when hasUI is true", async () => {
@@ -306,8 +306,8 @@ test("UI notifies for multi-group connection when hasUI is true", async () => {
   mod(pi);
 
   await triggerSessionStart(pi, true);
-  expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected (group bridge)");
-  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (2 groups) — Group Bridge enabled", "info");
+  expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected");
+  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (2 groups)", "info");
 });
 
 test("UI calls notify on connection failure when hasUI is true", async () => {
