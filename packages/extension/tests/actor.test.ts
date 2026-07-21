@@ -120,6 +120,21 @@ describe("ensureRegistered", () => {
     // State file should NOT be written on idempotent re-registration
     expect(writeFileSync).not.toHaveBeenCalled();
   });
+  test("is idempotent with actual daemon error message", async () => {
+    const client = mockClient();
+    const config = { ...baseConfig, actorId: "existing-actor-2" } as BridgeConfig;
+    // The CCCC daemon sends "Name already exists: <actor_id>" when re-registering
+    const existsError = new BridgeClientError(
+      "registerActor failed",
+      new Error("Name already exists: existing-actor-2"),
+    );
+    vi.mocked(client.registerActor).mockRejectedValue(existsError);
+
+    const result = await ensureRegistered(client, config, "test-group", testStatePath);
+
+    expect(result).toBe("existing-actor-2");
+    expect(writeFileSync).not.toHaveBeenCalled();
+  });
 
   test("re-throws non-actor-exists errors", async () => {
     const client = mockClient();
