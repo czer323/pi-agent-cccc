@@ -193,12 +193,24 @@ export class CCCCBridgeClient {
     }
   }
 
+  /** Guard: throw a typed error if no client is available. */
+  private _ensureConnected(): void {
+    if (!this._client) {
+      throw new BridgeClientError("Not connected");
+    }
+  }
+}
+
+  /**
+
   /**
    * Send a message across groups via the Group Bridge.
    * Wraps the SDK's sendCrossGroup which creates a source message in the
    * origin group and a forwarded message in the destination group.
    */
-  async sendCrossGroup(options: SendCrossGroupOptions): Promise<SendResult> {
+  async sendCrossGroup(
+    options: SendCrossGroupOptions,
+  ): Promise<Record<string, unknown>> {
     this._ensureConnected();
     try {
       return await this._client!.sendCrossGroup(options);

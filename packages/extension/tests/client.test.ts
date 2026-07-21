@@ -19,6 +19,7 @@ function createMockClient(): CCCCClientLike {
     sendCrossGroup: vi.fn(),
     groups: vi.fn(),
     groupShow: vi.fn(),
+    send: vi.fn(),
   };
 }
 
