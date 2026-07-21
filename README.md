@@ -69,7 +69,22 @@ vp test
 
 # Run the tollgate
 vp check
+
 # All files formatted, type-checked, linted
+```
+
+## Testing
+
+This project uses a 4-layer testing strategy covering unit tests, integration tests,
+E2E agent tests, and cross-harness tests. See [docs/testing.md](docs/testing.md) for
+the full strategy documentation.
+
+```bash
+# Unit tests (fast, no daemon needed)
+cd packages/extension && vp test
+
+# Integration tests (requires live CCCC daemon)
+CCCC_DAEMON_HOST=192.168.7.163 pnpm test:integration
 ```
 
 ## Configuration

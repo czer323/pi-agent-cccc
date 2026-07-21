@@ -11,6 +11,7 @@
   "scripts": {
     "build": "vp pack",
     "dev": "vp pack --watch",
+    "test:integration": "vp test tests/integration/",
     "test": "vp test",
     "check": "vp check"
   },
