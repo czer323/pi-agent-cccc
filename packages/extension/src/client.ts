@@ -5,11 +5,11 @@ import type {
   CCCSEvent,
   EventsStreamOptions,
   EventStreamItem,
+  GroupsResult,
+  GroupShowResult,
 } from "./types.ts";
 import { BridgeClientError, defaultBridgeConfig } from "./types.ts";
-
-// Re-export types and helpers so callers get everything from one module.
-export type { CCCCClientLike, BridgeClientConfig, CCCSEvent };
+export type { CCCCClientLike, BridgeClientConfig, CCCSEvent, GroupsResult, GroupShowResult };
 export { BridgeClientError, defaultBridgeConfig };
 
 /**
@@ -140,6 +140,31 @@ export class CCCCBridgeClient {
   eventsStream(options: EventsStreamOptions): AsyncGenerator<EventStreamItem> {
     this._ensureConnected();
     return this._client!.eventsStream(options);
+  }
+  /**
+   * List all groups known to the daemon.
+   */
+  async groups(): Promise<GroupsResult> {
+    this._ensureConnected();
+    try {
+      return await this._client!.groups();
+    } catch (err) {
+      console.error("groups failed:", err);
+      throw new BridgeClientError("groups failed", err);
+    }
+  }
+
+  /**
+   * Show detailed group info including scopes.
+   */
+  async groupShow(groupId: string): Promise<GroupShowResult> {
+    this._ensureConnected();
+    try {
+      return await this._client!.groupShow(groupId);
+    } catch (err) {
+      console.error("groupShow failed:", err);
+      throw new BridgeClientError("groupShow failed", err);
+    }
   }
 
   /** Guard: throw a typed error if no client is available. */

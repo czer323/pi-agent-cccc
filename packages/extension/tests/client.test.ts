@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vite-plus/test";
-import { CCCCBridgeClient } from "../src/client.ts";
+import { CCCCBridgeClient, BridgeClientError } from "../src/client.ts";
 import type { CCCCClientLike, BridgeClientConfig } from "../src/types.ts";
 
 // ---- helpers ----
@@ -16,6 +16,8 @@ function createMockClient(): CCCCClientLike {
     inboxList: vi.fn(),
     inboxMarkRead: vi.fn(),
     eventsStream: vi.fn() as any,
+    groups: vi.fn(),
+    groupShow: vi.fn(),
   };
 }
 
@@ -125,6 +127,77 @@ test("inboxMarkRead calls SDK with correct positional args", async () => {
   await client.inboxMarkRead({ groupId: "group-1", actorId: "actor-1", eventId: "evt-1" });
 
   expect(inboxMarkRead).toHaveBeenCalledWith("group-1", "actor-1", "evt-1");
+});
+
+// ---- groups / groupShow ----
+
+test("groups returns list from client", async () => {
+  const mockClient = createMockClient();
+  const groupsResult = {
+    groups: [
+      {
+        group_id: "group-1",
+        title: "Group 1",
+        scopes: [{ scope_key: "/home/user/proj", url: "file:///home/user/proj" }],
+      },
+      { group_id: "group-2", title: "Group 2", scopes: [] },
+    ],
+  };
+  (mockClient.groups as any).mockResolvedValue(groupsResult);
+  const bridge = new CCCCBridgeClient(mockClient);
+  await bridge.connect(testConfig);
+
+  const result = await bridge.groups();
+
+  expect(result).toEqual(groupsResult);
+  expect(mockClient.groups).toHaveBeenCalledOnce();
+});
+
+test("groupShow returns group detail from client", async () => {
+  const mockClient = createMockClient();
+  const showResult = {
+    group: {
+      group_id: "group-1",
+      title: "Group 1",
+      scopes: [{ scope_key: "/home/user/proj", url: "file:///home/user/proj" }],
+    },
+  };
+  (mockClient.groupShow as any).mockResolvedValue(showResult);
+  const bridge = new CCCCBridgeClient(mockClient);
+  await bridge.connect(testConfig);
+
+  const result = await bridge.groupShow("group-1");
+
+  expect(result).toEqual(showResult);
+  expect(mockClient.groupShow).toHaveBeenCalledWith("group-1");
+});
+
+test("groups without connect throws BridgeClientError", async () => {
+  const bridge = new CCCCBridgeClient(); // no injected client, no connect
+  await expect(bridge.groups()).rejects.toThrow("Not connected");
+});
+
+test("groupShow without connect throws BridgeClientError", async () => {
+  const bridge = new CCCCBridgeClient();
+  await expect(bridge.groupShow("group-1")).rejects.toThrow("Not connected");
+});
+
+test("groups wraps SDK error as BridgeClientError", async () => {
+  const mockClient = createMockClient();
+  (mockClient.groups as any).mockRejectedValue(new Error("daemon error"));
+  const bridge = new CCCCBridgeClient(mockClient);
+  await bridge.connect(testConfig);
+
+  await expect(bridge.groups()).rejects.toThrow(BridgeClientError);
+});
+
+test("groupShow wraps SDK error as BridgeClientError", async () => {
+  const mockClient = createMockClient();
+  (mockClient.groupShow as any).mockRejectedValue(new Error("daemon error"));
+  const bridge = new CCCCBridgeClient(mockClient);
+  await bridge.connect(testConfig);
+
+  await expect(bridge.groupShow("group-1")).rejects.toThrow(BridgeClientError);
 });
 
 // ---- disconnect ----

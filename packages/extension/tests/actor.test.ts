@@ -17,6 +17,8 @@ const baseConfig: BridgeConfig = {
   groups: ["test-group"],
   actorId: null,
   pollIntervalMs: 3000,
+  autoDiscover: false,
+  defaultGroupId: null,
 };
 
 const testStatePath = "/tmp/test-cccc-state.json";

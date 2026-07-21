@@ -6,6 +6,8 @@ import type {
   CCCSEvent,
   EventsStreamOptions,
   EventStreamItem,
+  GroupsResult,
+  GroupShowResult,
 } from "cccc-sdk";
 
 /**
@@ -35,9 +37,11 @@ export interface CCCCClientLike {
     by?: string,
   ): Promise<Record<string, unknown>>;
   eventsStream(options: EventsStreamOptions): AsyncGenerator<EventStreamItem>;
+  groups(): Promise<GroupsResult>;
+  groupShow(groupId: string): Promise<GroupShowResult>;
 }
 
-export type { CCCSEvent };
+export type { CCCSEvent, GroupsResult, GroupShowResult };
 
 /**
  * Typed error thrown by CCCCBridgeClient when an SDK operation fails.

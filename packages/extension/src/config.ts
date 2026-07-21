@@ -15,6 +15,13 @@ export interface BridgeConfig {
   actorId: string | null;
   /** Polling interval in ms (CCCC_POLL_INTERVAL_MS, default 3000) */
   pollIntervalMs: number;
+  /** Auto-discover groups from cwd/git repository scope (CCCC_AUTO_DISCOVER, default true).
+   *  When true and groups array is empty, session_start calls discoverGroups() to find
+   *  matching groups based on cwd / git repo root. */
+  autoDiscover: boolean;
+  /** Default group ID when auto-discovery finds no match (CCCC_DEFAULT_GROUP_ID).
+   *  Only used when autoDiscover is true and groups array is empty. */
+  defaultGroupId: string | null;
 }
 
 /**
@@ -40,5 +47,7 @@ export function loadConfig(): BridgeConfig {
     groups,
     actorId: process.env.CCCC_ACTOR_ID ?? null,
     pollIntervalMs: Number.parseInt(process.env.CCCC_POLL_INTERVAL_MS ?? "3000", 10),
+    autoDiscover: process.env.CCCC_AUTO_DISCOVER !== "false",
+    defaultGroupId: process.env.CCCC_DEFAULT_GROUP_ID ?? null,
   };
 }
