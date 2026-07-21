@@ -12,6 +12,7 @@ const {
   mockStreamerStop,
   mockPollerStart,
   mockPollerStop,
+  mockDiscoverGroups,
 } = vi.hoisted(() => ({
   mockLoadConfig: vi.fn(),
   mockConnect: vi.fn().mockResolvedValue(undefined),
@@ -21,6 +22,7 @@ const {
   mockStreamerStop: vi.fn(),
   mockPollerStart: vi.fn(),
   mockPollerStop: vi.fn(),
+  mockDiscoverGroups: vi.fn(),
 }));
 
 // ---------- module mocks ----------
@@ -59,6 +61,10 @@ vi.mock("../src/streamer.ts", () => ({
   InboxStreamer: vi.fn(function () {
     return { start: mockStreamerStart, stop: mockStreamerStop };
   }),
+}));
+
+vi.mock("../src/discovery.ts", () => ({
+  discoverGroups: mockDiscoverGroups,
 }));
 
 // ---------- helpers ----------
@@ -305,4 +311,165 @@ test("UI calls notify on connection failure when hasUI is true", async () => {
 
   expect(pi._notify).toHaveBeenCalled();
   expect(pi._setStatus).not.toHaveBeenCalled(); // no connections succeeded
+});
+
+// ---------- auto-discovery tests ----------
+
+test("auto-discovery triggers when groups empty and autoDiscover is true", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+    autoDiscover: true,
+    defaultGroupId: null,
+  });
+  mockDiscoverGroups.mockResolvedValue(["discovered-group"]);
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockDiscoverGroups).toHaveBeenCalledOnce();
+  // 1 discovery client + 1 per-group client
+  expect(mockConnect).toHaveBeenCalledTimes(2);
+  expect(mockEnsureRegistered).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
+});
+
+test("auto-discovery connects to all discovered groups", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+    autoDiscover: true,
+    defaultGroupId: null,
+  });
+  mockDiscoverGroups.mockResolvedValue(["group-a", "group-b"]);
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockDiscoverGroups).toHaveBeenCalledOnce();
+  // 1 discovery client + 2 per-group clients
+  expect(mockConnect).toHaveBeenCalledTimes(3);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(2);
+});
+
+test("auto-discovery falls back to defaultGroupId when no matches found", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+    autoDiscover: true,
+    defaultGroupId: "lobby",
+  });
+  mockDiscoverGroups.mockResolvedValue([]);
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockDiscoverGroups).toHaveBeenCalledOnce();
+  // 1 discovery client + 1 default group client
+  expect(mockConnect).toHaveBeenCalledTimes(2);
+  expect(mockEnsureRegistered).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ defaultGroupId: "lobby" }),
+    "lobby",
+    expect.any(String),
+  );
+});
+
+test("auto-discovery with no matches and no default stays inert", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+    autoDiscover: true,
+    defaultGroupId: null,
+  });
+  mockDiscoverGroups.mockResolvedValue([]);
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockDiscoverGroups).toHaveBeenCalledOnce();
+  // Discovery client connects then disconnects — no per-group clients
+  expect(mockConnect).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStart).not.toHaveBeenCalled();
+});
+
+test("auto-discovery failure skips gracefully and stays inert", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+    autoDiscover: true,
+    defaultGroupId: null,
+  });
+  mockDiscoverGroups.mockRejectedValue(new Error("daemon unreachable"));
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockDiscoverGroups).toHaveBeenCalledOnce();
+  // Discovery client connects before discoverGroups throws
+  expect(mockConnect).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStart).not.toHaveBeenCalled();
+});
+
+test("autoDiscover false with empty groups stays inert without discovery attempt", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+    autoDiscover: false,
+    defaultGroupId: null,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockDiscoverGroups).not.toHaveBeenCalled();
+  expect(mockConnect).not.toHaveBeenCalled();
+});
+
+test("explicit groups take precedence over auto-discovery", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["explicit-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+    autoDiscover: true,
+    defaultGroupId: null,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockDiscoverGroups).not.toHaveBeenCalled();
+  expect(mockConnect).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
 });

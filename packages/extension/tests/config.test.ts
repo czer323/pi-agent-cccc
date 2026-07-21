@@ -9,6 +9,8 @@ beforeEach(() => {
   // Clear CCCC group vars for clean slate
   delete process.env.CCCC_GROUP_ID;
   delete process.env.CCCC_GROUP_IDS;
+  delete process.env.CCCC_AUTO_DISCOVER;
+  delete process.env.CCCC_DEFAULT_GROUP_ID;
 });
 
 describe("loadConfig", () => {
@@ -52,5 +54,33 @@ describe("loadConfig", () => {
     process.env.CCCC_GROUP_IDS = "";
     const config = loadConfig();
     expect(config.groups).toEqual([]);
+  });
+
+  test("autoDiscover defaults to true when CCCC_AUTO_DISCOVER not set", () => {
+    const config = loadConfig();
+    expect(config.autoDiscover).toBe(true);
+  });
+
+  test("autoDiscover is true when CCCC_AUTO_DISCOVER is true", () => {
+    process.env.CCCC_AUTO_DISCOVER = "true";
+    const config = loadConfig();
+    expect(config.autoDiscover).toBe(true);
+  });
+
+  test("autoDiscover is false when CCCC_AUTO_DISCOVER is false", () => {
+    process.env.CCCC_AUTO_DISCOVER = "false";
+    const config = loadConfig();
+    expect(config.autoDiscover).toBe(false);
+  });
+
+  test("defaultGroupId parses from CCCC_DEFAULT_GROUP_ID", () => {
+    process.env.CCCC_DEFAULT_GROUP_ID = "lobby";
+    const config = loadConfig();
+    expect(config.defaultGroupId).toBe("lobby");
+  });
+
+  test("defaultGroupId is null when CCCC_DEFAULT_GROUP_ID not set", () => {
+    const config = loadConfig();
+    expect(config.defaultGroupId).toBeNull();
   });
 });
