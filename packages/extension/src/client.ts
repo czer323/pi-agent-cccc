@@ -103,6 +103,19 @@ export class CCCCBridgeClient {
   }
 
   /**
+   * Remove an actor from a group.
+   * Wraps the SDK's `actorRemove`, which takes positional args.
+   */
+  async actorRemove(groupId: string, actorId: string): Promise<void> {
+    this._ensureConnected();
+    try {
+      await this._client!.actorRemove(groupId, actorId);
+    } catch (err) {
+      throw new BridgeClientError("actorRemove failed", err);
+    }
+  }
+
+  /**
    * List inbox messages for an actor.
    * Returns just the messages array; the cursor is internal to the wrapper.
    */

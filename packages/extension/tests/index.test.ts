@@ -15,6 +15,7 @@ const {
   mockPollerStart,
   mockPollerStop,
   mockDiscoverGroups,
+  mockActorRemove,
 } = vi.hoisted(() => ({
   mockLoadConfig: vi.fn(),
   mockConnect: vi.fn().mockResolvedValue(undefined),
@@ -25,6 +26,7 @@ const {
   mockPollerStart: vi.fn(),
   mockPollerStop: vi.fn(),
   mockDiscoverGroups: vi.fn(),
+  mockActorRemove: vi.fn().mockResolvedValue(undefined),
   mockRegisterActor: vi.fn().mockResolvedValue({ actorId: "child-actor-id" }),
   mockSend: vi.fn().mockResolvedValue({ event_id: "evt-1" }),
 }));
@@ -42,6 +44,7 @@ vi.mock("../src/client.ts", () => ({
       connect: mockConnect,
       disconnect: mockDisconnect,
       registerActor: mockRegisterActor,
+      actorRemove: mockActorRemove,
       send: mockSend,
     };
   }),
@@ -231,7 +234,9 @@ test("connection failure degrades gracefully", async () => {
   expect(mockStreamerStart).not.toHaveBeenCalled();
 });
 
-test("session_shutdown stops streamer and disconnects client for single group", async () => {
+// ---------- shutdown tests ----------
+
+test("session_shutdown removes actor before disconnecting for single group", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
@@ -248,6 +253,7 @@ test("session_shutdown stops streamer and disconnects client for single group", 
 
   await triggerSessionShutdown(pi);
 
+  expect(mockActorRemove).toHaveBeenCalledWith("test-group", "actor-123");
   expect(mockStreamerStop).toHaveBeenCalledTimes(1);
   expect(mockDisconnect).toHaveBeenCalledTimes(1);
 });
@@ -269,9 +275,36 @@ test("session_shutdown stops all streamers and disconnects all clients for multi
 
   await triggerSessionShutdown(pi);
 
+  expect(mockActorRemove).toHaveBeenCalledTimes(2);
+  expect(mockActorRemove).toHaveBeenCalledWith("group-a", "actor-123");
+  expect(mockActorRemove).toHaveBeenCalledWith("group-b", "actor-123");
   expect(mockStreamerStop).toHaveBeenCalledTimes(2);
   expect(mockDisconnect).toHaveBeenCalledTimes(2);
 });
+
+test("session_shutdown actorRemove failure logs but does not block shutdown", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+  mockActorRemove.mockRejectedValue(new Error("daemon error"));
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  await expect(triggerSessionShutdown(pi)).resolves.toBeUndefined();
+
+  expect(mockActorRemove).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStop).toHaveBeenCalledTimes(1);
+  expect(mockDisconnect).toHaveBeenCalledTimes(1);
+});
+
+// ---------- UI tests ----------
 
 test("UI calls are guarded by ctx.hasUI", async () => {
   mockLoadConfig.mockReturnValue({
@@ -401,7 +434,6 @@ test("auto-discovery falls back to defaultGroupId when no matches found", async 
     expect.anything(),
     expect.objectContaining({ defaultGroupId: "lobby" }),
     "lobby",
-    expect.any(String),
   );
 });
 

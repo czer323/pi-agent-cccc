@@ -6,11 +6,7 @@ import { ensureRegistered } from "./actor.ts";
 import { discoverGroups } from "./discovery.ts";
 import { InboxPoller } from "./inbox.ts";
 import { InboxStreamer } from "./streamer.ts";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { randomUUID } from "node:crypto";
-
-const STATE_FILE = join(homedir(), ".pi", "agent", "extensions", "cccc-bridge-state.json");
 
 const PARENT_ACTOR_ENV_PREFIX = "CCCC_PARENT_ACTOR_";
 
@@ -121,8 +117,8 @@ export default function (pi: ExtensionAPI) {
           const client = new CCCCBridgeClient();
           await client.connect(defaultBridgeConfig());
 
-          // Register actor (idempotent) — per-group
-          const actorId = await ensureRegistered(client, config, groupId, STATE_FILE);
+          // Register actor with unique per-session ID
+          const actorId = await ensureRegistered(client, config, groupId);
 
           // Publish parent actor ID so future sub-agents in this process can detect
           process.env[`${PARENT_ACTOR_ENV_PREFIX}${groupId}`] = actorId;
@@ -185,6 +181,15 @@ export default function (pi: ExtensionAPI) {
     for (const [groupId, conn] of connections) {
       conn.streamer?.stop();
       conn.poller?.stop();
+      try {
+        await conn.client.actorRemove(groupId, conn.actorId);
+        console.log(`[cccc-bridge] Removed actor "${conn.actorId}" from group "${groupId}"`);
+      } catch (err) {
+        console.error(
+          `[cccc-bridge] Failed to remove actor "${conn.actorId}" from group "${groupId}":`,
+          err,
+        );
+      }
       conn.client.disconnect();
       console.log(`[cccc-bridge] Disconnected group "${groupId}"`);
     }

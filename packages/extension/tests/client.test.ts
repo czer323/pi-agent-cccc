@@ -13,6 +13,7 @@ const testConfig: BridgeClientConfig = {
 function createMockClient(): CCCCClientLike {
   return {
     actorAdd: vi.fn(),
+    actorRemove: vi.fn(),
     inboxList: vi.fn(),
     inboxMarkRead: vi.fn(),
     eventsStream: vi.fn() as any,
@@ -316,4 +317,32 @@ test("inboxMarkRead without connect throws BridgeClientError", async () => {
   await expect(client.inboxMarkRead({ groupId: "g", actorId: "a", eventId: "e" })).rejects.toThrow(
     "Not connected",
   );
+});
+
+// ---- actorRemove ----
+
+test("actorRemove calls SDK actorRemove with groupId and actorId", async () => {
+  const mock = createMockClient();
+  const actorRemove = vi.fn().mockResolvedValue({});
+  mock.actorRemove = actorRemove;
+  const client = new CCCCBridgeClient(mock);
+  await client.connect(testConfig);
+
+  await client.actorRemove("group-1", "actor-1");
+
+  expect(actorRemove).toHaveBeenCalledWith("group-1", "actor-1");
+});
+
+test("actorRemove wraps SDK error as BridgeClientError", async () => {
+  const mock = createMockClient();
+  mock.actorRemove = vi.fn().mockRejectedValue(new Error("daemon error"));
+  const client = new CCCCBridgeClient(mock);
+  await client.connect(testConfig);
+
+  await expect(client.actorRemove("group-1", "actor-1")).rejects.toThrow(BridgeClientError);
+});
+
+test("actorRemove without connect throws BridgeClientError", async () => {
+  const client = new CCCCBridgeClient();
+  await expect(client.actorRemove("group-1", "actor-1")).rejects.toThrow("Not connected");
 });

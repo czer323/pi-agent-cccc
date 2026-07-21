@@ -32,6 +32,7 @@ export interface BridgeClientConfig {
  */
 export interface CCCCClientLike {
   actorAdd(options: ActorAddOptions): Promise<ActorAddResult>;
+  actorRemove(groupId: string, actorId: string, by?: string): Promise<Record<string, unknown>>;
   inboxList(options: InboxListOptions): Promise<InboxListResult>;
   inboxMarkRead(
     groupId: string,
