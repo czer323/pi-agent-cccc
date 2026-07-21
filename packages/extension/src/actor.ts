@@ -51,7 +51,12 @@ export function generateActorId(opts?: {
   const machine = opts?.machine ?? os.hostname().split(".")[0];
   const project = opts?.project ?? getProjectName();
   const suffix = randomUUID().split("-")[0].substring(0, 6);
-  return `${role}-${machine}-${project}-${suffix}`;
+  const clean = (s: string) =>
+    s
+      .replace(/[^a-zA-Z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+  return `${clean(role)}-${clean(machine)}-${clean(project)}-${suffix}`;
 }
 
 /**
