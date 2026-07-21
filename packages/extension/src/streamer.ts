@@ -11,7 +11,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CCCCBridgeClient } from "./client.ts";
 import type { EventStreamItem } from "./types.ts";
 import type { EventStreamEvent } from "cccc-sdk";
-import { formatMessage } from "./inbox.ts";
+import { formatMessage, shouldDeliver } from "./inbox.ts";
 
 export interface InboxStreamerOptions {
   client: CCCCBridgeClient;
@@ -103,6 +103,11 @@ export class InboxStreamer {
     const event = (item as EventStreamEvent).event;
 
     if (this.seenIds.has(event.id)) return;
+
+    if (!shouldDeliver(event, this._options.actorId)) {
+      // Not for this actor — skip
+      return;
+    }
 
     const raw = event.data?.text;
     const text = typeof raw === "string" ? raw : "(no text)";

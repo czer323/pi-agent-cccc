@@ -1,6 +1,6 @@
 // oxlint-disable typescript/unbound-method
 import { expect, test, vi, describe, beforeEach } from "vite-plus/test";
-import { InboxPoller, formatMessage } from "../src/inbox.ts";
+import { InboxPoller, formatMessage, shouldDeliver } from "../src/inbox.ts";
 import type { CCCCBridgeClient } from "../src/client.ts";
 import type { CCCSEvent } from "../src/types.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -51,6 +51,56 @@ describe("formatMessage", () => {
   test("handles null text with fallback", () => {
     const event = makeEvent({ id: "evt-3", by: "carol", data: { text: null } });
     expect(formatMessage(event)).toBe("New CCCC message from carol:\n\n(no text)");
+  });
+});
+
+// ---- shouldDeliver ----
+
+describe("shouldDeliver", () => {
+  const actorId = "my-actor";
+
+  test("delivers when `to` is absent (broadcast)", () => {
+    expect(shouldDeliver(makeEvent({ id: "e1", data: { text: "hi" } }), actorId)).toBe(true);
+  });
+
+  test("delivers when `to` is empty array (broadcast)", () => {
+    expect(shouldDeliver(makeEvent({ id: "e2", data: { text: "hi", to: [] } }), actorId)).toBe(true);
+  });
+
+  test("delivers when `to` contains this actorId (direct message)", () => {
+    expect(shouldDeliver(makeEvent({ id: "e3", data: { text: "hi", to: ["my-actor"] } }), actorId)).toBe(true);
+  });
+
+  test("delivers when `to` contains a different actorId first and ours second", () => {
+    expect(shouldDeliver(makeEvent({ id: "e4", data: { text: "hi", to: ["other-actor", "my-actor"] } }), actorId)).toBe(true);
+  });
+
+  test("delivers when `to` contains \"@all\" (broadcast)", () => {
+    expect(shouldDeliver(makeEvent({ id: "e5", data: { text: "hi", to: ["@all"] } }), actorId)).toBe(true);
+  });
+
+  test("delivers when `to` contains \"@peers\"", () => {
+    expect(shouldDeliver(makeEvent({ id: "e6", data: { text: "hi", to: ["@peers"] } }), actorId)).toBe(true);
+  });
+
+  test("skips when `to` contains \"@foreman\"", () => {
+    expect(shouldDeliver(makeEvent({ id: "e7", data: { text: "hi", to: ["@foreman"] } }), actorId)).toBe(false);
+  });
+
+  test("skips when `to` contains \"@user\"", () => {
+    expect(shouldDeliver(makeEvent({ id: "e8", data: { text: "hi", to: ["@user"] } }), actorId)).toBe(false);
+  });
+
+  test("skips when `to` contains only another actor's ID", () => {
+    expect(shouldDeliver(makeEvent({ id: "e9", data: { text: "hi", to: ["other-actor"] } }), actorId)).toBe(false);
+  });
+
+  test("skips when `to` contains multiple non-matching entries", () => {
+    expect(shouldDeliver(makeEvent({ id: "e10", data: { text: "hi", to: ["@foreman", "@user"] } }), actorId)).toBe(false);
+  });
+
+  test("@all takes priority over other roles", () => {
+    expect(shouldDeliver(makeEvent({ id: "e11", data: { text: "hi", to: ["@all", "@foreman"] } }), actorId)).toBe(true);
   });
 });
 
@@ -250,5 +300,66 @@ describe("InboxPoller", () => {
     expect(sendMessage).toHaveBeenCalledTimes(2);
 
     poller.stop();
+  });
+
+  test("poll() skips message addressed to another actor (not delivered, not marked read)", async () => {
+    const { client, pi, sendMessage } = createMocks();
+    vi.mocked(client.inboxMarkRead).mockResolvedValue(undefined);
+    const events = [
+      makeEvent({ id: "evt-1", by: "alice", data: { text: "for me", to: ["test-actor"] } }),
+      makeEvent({ id: "evt-2", by: "bob", data: { text: "for other", to: ["other-actor"] } }),
+    ];
+    vi.mocked(client.inboxList).mockResolvedValue(events);
+
+    const poller = new InboxPoller({
+      client,
+      groupId: testGroupId,
+      actorId: testActorId,
+      pollIntervalMs: testPollInterval,
+      pi,
+    });
+
+    await (poller as unknown as { poll(): Promise<void> }).poll();
+
+    // Only the message for us should be delivered and marked read
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining("for me") }),
+      expect.anything(),
+    );
+    expect(client.inboxMarkRead).toHaveBeenCalledTimes(1);
+    expect(client.inboxMarkRead).toHaveBeenCalledWith({
+      groupId: testGroupId,
+      actorId: testActorId,
+      eventId: "evt-1",
+    });
+  });
+
+  test("poll() skips @foreman messages entirely (no delivery, no mark-read)", async () => {
+    const { client, pi, sendMessage } = createMocks();
+    vi.mocked(client.inboxMarkRead).mockResolvedValue(undefined);
+    const events = [
+      makeEvent({ id: "evt-1", by: "alice", data: { text: "general", to: ["@all"] } }),
+      makeEvent({ id: "evt-2", by: "bob", data: { text: "foreman only", to: ["@foreman"] } }),
+    ];
+    vi.mocked(client.inboxList).mockResolvedValue(events);
+
+    const poller = new InboxPoller({
+      client,
+      groupId: testGroupId,
+      actorId: testActorId,
+      pollIntervalMs: testPollInterval,
+      pi,
+    });
+
+    await (poller as unknown as { poll(): Promise<void> }).poll();
+
+    // Only @all message should be delivered and marked read
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining("general") }),
+      expect.anything(),
+    );
+    expect(client.inboxMarkRead).toHaveBeenCalledTimes(1);
   });
 });
