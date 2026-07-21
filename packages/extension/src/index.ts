@@ -152,6 +152,35 @@ export default function (pi: ExtensionAPI) {
         };
       },
     });
+
+    // ---- cccc_whoami tool ----
+    pi.registerTool({
+      name: "cccc_whoami",
+      label: "CCCC Who Am I",
+      description: "Returns the current CCCC actor ID and the list of connected group IDs.",
+      promptSnippet: "Identify my CCCC identity",
+      parameters: Type.Object({}),
+      execute: async () => {
+        if (connections.size === 0) {
+          return {
+            content: [{ type: "text" as const, text: "Not connected to any CCCC group" }],
+            details: {},
+          };
+        }
+        // Use the first connection's actorId (all connections share the same session actor)
+        const firstConn = connections.values().next().value!;
+        const groupIds = Array.from(connections.keys());
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Actor ID: ${firstConn.actorId}\nGroups: ${groupIds.join(", ")}`,
+            },
+          ],
+          details: { actorId: firstConn.actorId, groupIds },
+        };
+      },
+    });
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -283,9 +312,10 @@ export default function (pi: ExtensionAPI) {
 
       const connectedCount = connections.size;
       if (ctx.hasUI && connectedCount > 0) {
+        const connActorId = connections.values().next().value!.actorId;
         ctx.ui.setStatus("cccc", "connected");
         ctx.ui.notify(
-          `CCCC bridge connected (${connectedCount} group${connectedCount !== 1 ? "s" : ""})`,
+          `CCCC bridge connected as "${connActorId}" (${connectedCount} group${connectedCount !== 1 ? "s" : ""})`,
           "info",
         );
       }

@@ -46,7 +46,7 @@ vi.mock("../src/client.ts", () => ({
       connect: mockConnect,
       disconnect: mockDisconnect,
       registerActor: mockRegisterActor,
-  mockReply,
+      mockReply,
       actorRemove: mockActorRemove,
       send: mockSend,
       reply: mockReply,
@@ -333,7 +333,7 @@ test("UI calls are guarded by ctx.hasUI", async () => {
   // When hasUI is true, setStatus and notify should be called with success
   await triggerSessionStart(pi, true);
   expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected");
-  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (1 group)", "info");
+  expect(pi._notify).toHaveBeenCalledWith('CCCC bridge connected as "actor-123" (1 group)', "info");
 });
 
 test("UI notifies for multi-group connection when hasUI is true", async () => {
@@ -351,7 +351,10 @@ test("UI notifies for multi-group connection when hasUI is true", async () => {
 
   await triggerSessionStart(pi, true);
   expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected");
-  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (2 groups)", "info");
+  expect(pi._notify).toHaveBeenCalledWith(
+    'CCCC bridge connected as "actor-123" (2 groups)',
+    "info",
+  );
 });
 
 test("UI calls notify on connection failure when hasUI is true", async () => {
@@ -670,7 +673,7 @@ test("registers cccc_send and cccc_reply tools on parent session_start", async (
   mod(pi);
   await triggerSessionStart(pi);
 
-  expect(pi.registerTool).toHaveBeenCalledTimes(2);
+  expect(pi.registerTool).toHaveBeenCalledTimes(3);
   const toolNames = pi._registeredTools.map((t: any) => t.name);
   expect(toolNames).toContain("cccc_send");
   expect(toolNames).toContain("cccc_reply");
@@ -883,4 +886,46 @@ test("tools registered in sub-agent sessions", async () => {
   const toolNames = pi._registeredTools.map((t: any) => t.name);
   expect(toolNames).toContain("cccc_send");
   expect(toolNames).toContain("cccc_reply");
+});
+
+test("registers cccc_whoami tool on session_start", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(pi.registerTool).toHaveBeenCalled();
+  const toolNames = pi._registeredTools.map((t: any) => t.name);
+  expect(toolNames).toContain("cccc_whoami");
+});
+
+test("cccc_whoami tool returns actor ID and group IDs", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["group-a", "group-b"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const whoamiTool = pi._registeredTools.find((t: any) => t.name === "cccc_whoami");
+  expect(whoamiTool).toBeDefined();
+  const result = await whoamiTool.execute("call-1", {}, undefined, undefined, {});
+
+  expect(result.content[0].text).toContain("actor-123");
+  expect(result.content[0].text).toContain("group-a");
+  expect(result.content[0].text).toContain("group-b");
 });

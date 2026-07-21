@@ -130,6 +130,7 @@ export class InboxStreamer {
         : undefined);
 
     const details: Record<string, unknown> = {
+      actorId: this._options.actorId,
       groupId: this._options.groupId,
       eventId: event.id,
       by: event.by,
