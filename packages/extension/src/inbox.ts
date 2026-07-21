@@ -8,6 +8,8 @@ export interface InboxPollerOptions {
   actorId: string;
   pollIntervalMs: number;
   pi: ExtensionAPI;
+  /** Shared deduplication set (e.g. from InboxStreamer) for fallback continuity. */
+  seenIds?: Set<string>;
 }
 
 /**
@@ -37,8 +39,8 @@ export class InboxPoller {
   private options: InboxPollerOptions;
 
   constructor(options: InboxPollerOptions) {
+    this.seenIds = options.seenIds ?? new Set<string>();
     this.options = options;
-    this.seenIds = new Set();
   }
 
   /** Start polling on the configured interval. */

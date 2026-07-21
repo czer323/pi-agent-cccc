@@ -15,6 +15,7 @@ function createMockClient(): CCCCClientLike {
     actorAdd: vi.fn(),
     inboxList: vi.fn(),
     inboxMarkRead: vi.fn(),
+    eventsStream: vi.fn() as any,
   };
 }
 
