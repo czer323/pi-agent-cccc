@@ -4,7 +4,6 @@ import { defaultBridgeConfig, BridgeClientError } from "./types.ts";
 import { CCCCBridgeClient } from "./client.ts";
 import { ensureRegistered } from "./actor.ts";
 import { InboxPoller } from "./inbox.ts";
-import { InboxStreamer } from "./streamer.ts";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -12,58 +11,35 @@ const STATE_FILE = join(homedir(), ".pi", "agent", "extensions", "cccc-bridge-st
 
 interface GroupConnection {
   client: CCCCBridgeClient;
-  streamer: InboxStreamer | null;
   poller: InboxPoller | null;
   actorId: string;
 }
 
 export default function (pi: ExtensionAPI) {
   const connections = new Map<string, GroupConnection>();
+
   pi.on("session_start", async (_event, ctx) => {
     const config = loadConfig();
-    if (config.groups.length === 0) return; // inert when unconfigured
+    if (config.groups.length === 0) return;
 
     for (const groupId of config.groups) {
       try {
-        // Connect to daemon
         const client = new CCCCBridgeClient();
         await client.connect(defaultBridgeConfig());
 
-        // Register actor (idempotent) — per-group
         const actorId = await ensureRegistered(client, config, groupId, STATE_FILE);
 
-        // Shared dedup set: streamer → poller fallback continuity
-        const seenIds = new Set<string>();
-
-        // Fallback polling starter
-        let poller: InboxPoller | null = null;
-        const startPoller = () => {
-          if (poller) return;
-          poller = new InboxPoller({
-            client,
-            groupId,
-            actorId,
-            pollIntervalMs: config.pollIntervalMs,
-            pi,
-            seenIds,
-          });
-          poller.start();
-        };
-
-        // Start with event stream
-        const streamer = new InboxStreamer({
+        const poller = new InboxPoller({
           client,
           groupId,
           actorId,
+          pollIntervalMs: config.pollIntervalMs,
           pi,
-          onFallback: startPoller,
-          seenIds,
         });
-        streamer.start();
+        poller.start();
 
-        connections.set(groupId, { client, streamer, poller, actorId });
+        connections.set(groupId, { client, poller, actorId });
       } catch (err) {
-        // Graceful degradation — per-group failure doesn't block other groups
         console.error(`[cccc-bridge] Failed to connect group "${groupId}":`, err);
         if (ctx.hasUI) {
           const msg =
@@ -87,7 +63,6 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     for (const [groupId, conn] of connections) {
-      conn.streamer?.stop();
       conn.poller?.stop();
       conn.client.disconnect();
       console.log(`[cccc-bridge] Disconnected group "${groupId}"`);

@@ -4,6 +4,8 @@ import type {
   InboxListOptions,
   InboxListResult,
   CCCSEvent,
+  EventsStreamOptions,
+  EventStreamItem,
 } from "cccc-sdk";
 
 /**
@@ -32,6 +34,7 @@ export interface CCCCClientLike {
     eventId: string,
     by?: string,
   ): Promise<Record<string, unknown>>;
+  eventsStream(options: EventsStreamOptions): AsyncGenerator<EventStreamItem>;
 }
 
 export type { CCCSEvent };
@@ -58,3 +61,4 @@ export function defaultBridgeConfig(): BridgeClientConfig {
     timeoutMs: 30_000,
   };
 }
+export type { EventsStreamOptions, EventStreamItem };

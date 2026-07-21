@@ -1,5 +1,11 @@
 import { CCCCClient } from "cccc-sdk";
-import type { CCCCClientLike, BridgeClientConfig, CCCSEvent } from "./types.ts";
+import type {
+  CCCCClientLike,
+  BridgeClientConfig,
+  CCCSEvent,
+  EventsStreamOptions,
+  EventStreamItem,
+} from "./types.ts";
 import { BridgeClientError, defaultBridgeConfig } from "./types.ts";
 
 // Re-export types and helpers so callers get everything from one module.
@@ -124,6 +130,16 @@ export class CCCCBridgeClient {
       console.error("inboxMarkRead failed:", err);
       throw new BridgeClientError("inboxMarkRead failed", err);
     }
+  }
+
+  /**
+   * Subscribe to the group event stream (long-lived connection).
+   * Wraps the SDK's eventsStream which returns an async generator of
+   * EventStreamItem (events, heartbeats, and unknown items).
+   */
+  eventsStream(options: EventsStreamOptions): AsyncGenerator<EventStreamItem> {
+    this._ensureConnected();
+    return this._client!.eventsStream(options);
   }
 
   /** Guard: throw a typed error if no client is available. */
