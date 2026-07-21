@@ -46,7 +46,7 @@ vi.mock("../src/client.ts", () => ({
       connect: mockConnect,
       disconnect: mockDisconnect,
       registerActor: mockRegisterActor,
-      mockReply,
+  mockReply,
       actorRemove: mockActorRemove,
       send: mockSend,
       reply: mockReply,
