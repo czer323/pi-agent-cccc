@@ -79,7 +79,6 @@ vi.mock("../src/streamer.ts", () => ({
   }),
 }));
 
-
 vi.mock("../src/inbox-queue.ts", () => ({
   InboxQueue: vi.fn(function () {
     return { enqueue: vi.fn(), wake: vi.fn(), destroy: vi.fn() };
@@ -888,10 +887,109 @@ test("tools registered in sub-agent sessions", async () => {
   mod(pi);
   await triggerSessionStart(pi);
 
+  // Tools are registered
   expect(pi.registerTool).toHaveBeenCalled();
   const toolNames = pi._registeredTools.map((t: any) => t.name);
   expect(toolNames).toContain("cccc_send");
   expect(toolNames).toContain("cccc_reply");
+  expect(toolNames).toContain("cccc_whoami");
+
+  // Sub-agent announcement was sent on startup
+  expect(mockSend).toHaveBeenCalledTimes(1);
+  expect(mockSend).toHaveBeenCalledWith(
+    expect.objectContaining({
+      groupId: "test-group",
+      to: ["parent-actor-123"],
+    }),
+  );
+
+  // cccc_send tool is executable in sub-agent context
+  const sendTool = pi._registeredTools.find((t: any) => t.name === "cccc_send");
+  const result = await sendTool.execute(
+    "call-1",
+    { text: "findings report", to: "parent-actor-123" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  expect(mockSend).toHaveBeenCalledTimes(2);
+  expect(mockSend).toHaveBeenNthCalledWith(2, {
+    groupId: "test-group",
+    text: "findings report",
+    to: ["parent-actor-123"],
+  });
+  expect(result.content[0].text).toContain("Message sent");
+
+  // cccc_reply tool is executable in sub-agent context
+  const replyTool = pi._registeredTools.find((t: any) => t.name === "cccc_reply");
+  const replyResult = await replyTool.execute(
+    "call-2",
+    { text: "reply to parent", eventId: "evt-original" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  expect(mockReply).toHaveBeenCalledWith({
+    groupId: "test-group",
+    replyTo: "evt-original",
+    text: "reply to parent",
+  });
+  expect(replyResult.content[0].text).toContain("Reply sent");
+
+  // cccc_whoami returns sub-agent's identity (derived from parent actor ID)
+  const whoamiTool = pi._registeredTools.find((t: any) => t.name === "cccc_whoami");
+  const whoamiResult = await whoamiTool.execute();
+  expect(whoamiResult.content[0].text).toMatch(/Actor ID: parent-actor-123-child-/);
+  expect(whoamiResult.content[0].text).toContain("test-group");
+
+  // Sub-agent does NOT start streamer/poller or call ensureRegistered
+  expect(mockStreamerStart).not.toHaveBeenCalled();
+  expect(mockPollerStart).not.toHaveBeenCalled();
+  expect(mockEnsureRegistered).not.toHaveBeenCalled();
+});
+
+test("sub-agent cccc_send to parent actor calls client.send correctly", async () => {
+  process.env["CCCC_PARENT_ACTOR_test-group"] = "parent-actor-456";
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  // Sub-agent announcement was sent with parent actor ID
+  expect(mockSend).toHaveBeenCalledWith(
+    expect.objectContaining({
+      groupId: "test-group",
+      text: expect.stringContaining("Sub-agent ready:"),
+      to: ["parent-actor-456"],
+    }),
+  );
+
+  // Sub-agent calls cccc_send to report findings to parent
+  const sendTool = pi._registeredTools.find((t: any) => t.name === "cccc_send");
+  const result = await sendTool.execute(
+    "call-3",
+    { text: "Task complete: analysis done", to: "parent-actor-456" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  // client.send was called with the parent actor as recipient
+  expect(mockSend).toHaveBeenLastCalledWith({
+    groupId: "test-group",
+    text: "Task complete: analysis done",
+    to: ["parent-actor-456"],
+  });
+  expect(result.details.eventId).toBe("evt-1");
 });
 
 test("registers cccc_whoami tool on session_start", async () => {
