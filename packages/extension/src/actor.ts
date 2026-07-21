@@ -3,14 +3,16 @@
  *
  * Identity resolution order:
  * 1. `config.actorId` (env var override)
- * 2. Cached value from state file
- * 3. Auto-generated ID
+ * 2. Auto-generated unique ID per session
+ *
+ * Actor IDs are unique per session — they include a random suffix,
+ * so no caching or idempotent registration is needed.
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { basename } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { BridgeConfig } from "./config.ts";
 import type { CCCCBridgeClient } from "./client.ts";
 
@@ -30,8 +32,10 @@ function getProjectName(): string {
 }
 
 /**
- * Generate a deterministic actor ID in the format:
- * `<role>-<machine>-<project>`
+ * Generate a unique actor ID per session in the format:
+ * `<role>-<machine>-<project>-<random6>`
+ *
+ * The random suffix ensures every session gets a unique ID.
  *
  * @param opts - Optional overrides for role, machine, and project.
  *   - `role`: from `CCCC_AGENT_ROLE` env, defaults to `"pi"`
@@ -46,88 +50,47 @@ export function generateActorId(opts?: {
   const role = opts?.role ?? process.env.CCCC_AGENT_ROLE ?? "pi";
   const machine = opts?.machine ?? os.hostname().split(".")[0];
   const project = opts?.project ?? getProjectName();
-  return `${role}-${machine}-${project}`;
+  const suffix = randomUUID().split("-")[0].substring(0, 6);
+  return `${role}-${machine}-${project}-${suffix}`;
 }
 
 /**
  * Resolve the actor ID following the priority chain:
- * 1. `config.actorId` (explicit override)
- * 2. Cached value from `stateFilePath`
- * 3. Auto-generated via {@link generateActorId}
+ * 1. Explicit override via config.actorId
+ * 2. Auto-generated unique ID
+ *
+ * @returns The resolved actor ID.
  */
-export function getActorId(config: BridgeConfig, stateFilePath: string): string {
+export function getActorId(config: BridgeConfig): string {
   // 1. Explicit override
   if (config.actorId) return config.actorId;
 
-  // 2. Cached value from state file
-  try {
-    const data = readFileSync(stateFilePath, "utf-8");
-    const state = JSON.parse(data) as { actor_id?: string };
-    if (state.actor_id) return state.actor_id;
-  } catch {
-    // File not found / invalid JSON → fall through to generate
-  }
-
-  // 3. Auto-generate
+  // 2. Auto-generate unique ID
   return generateActorId();
 }
 
 /**
  * Ensure an actor is registered with the CCCC daemon.
  *
- * Resolves the actor ID (override → cache → generate), attempts
- * registration, and writes a state file on first success. If the
- * daemon reports that the actor already exists, the registration
- * is treated as idempotent — no state file is written and the
- * existing actor ID is returned.
+ * Generates a unique per-session ID and registers it. Since IDs are unique,
+ * no idempotency handling is needed — every call creates a fresh actor.
  *
- * @returns The resolved actor ID.
+ * @returns The registered actor ID.
  */
 export async function ensureRegistered(
   client: CCCCBridgeClient,
   config: BridgeConfig,
   groupId: string,
-  stateFilePath: string,
 ): Promise<string> {
-  const actorId = getActorId(config, stateFilePath);
+  const actorId = getActorId(config);
 
-  try {
-    await client.registerActor({
-      groupId,
-      actorId,
-      runtime: "custom",
-      runner: "headless",
-      title: "Pi Agent",
-    });
-
-    // Registration succeeded — this is a first registration, write state
-    const state = JSON.stringify(
-      { actor_id: actorId, registered_at: new Date().toISOString() },
-      null,
-      2,
-    );
-    writeFileSync(stateFilePath, state, "utf-8");
-  } catch (err) {
-    // Check whether the error indicates the actor already exists
-    const typed = err as Error;
-    const message = typed.message ?? "";
-    const causeMessage = typed.cause instanceof Error ? typed.cause.message : "";
-
-    const actorExists =
-      /Name already exists/i.test(message) ||
-      /actor.*already (exists|registered)/i.test(message) ||
-      /actor_exists/i.test(message) ||
-      /Name already exists/i.test(causeMessage) ||
-      /actor.*already (exists|registered)/i.test(causeMessage) ||
-      /actor_exists/i.test(causeMessage);
-
-    if (actorExists) {
-      // Idempotent — actor was previously registered
-      return actorId;
-    }
-
-    throw err;
-  }
+  await client.registerActor({
+    groupId,
+    actorId,
+    runtime: "custom",
+    runner: "headless",
+    title: "Pi Agent",
+  });
 
   return actorId;
 }

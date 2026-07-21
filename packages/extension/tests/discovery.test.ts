@@ -17,6 +17,7 @@ import { CCCCBridgeClient } from "../src/client.ts";
 function createMockClient(): CCCCClientLike {
   return {
     actorAdd: vi.fn(),
+    actorRemove: vi.fn(),
     inboxList: vi.fn(),
     inboxMarkRead: vi.fn(),
     eventsStream: vi.fn() as any,
