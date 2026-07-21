@@ -17,6 +17,7 @@ const {
   mockPollerStop,
   mockDiscoverGroups,
   mockActorRemove,
+  mockGroupShow,
 } = vi.hoisted(() => ({
   mockLoadConfig: vi.fn(),
   mockConnect: vi.fn().mockResolvedValue(undefined),
@@ -28,11 +29,11 @@ const {
   mockPollerStop: vi.fn(),
   mockDiscoverGroups: vi.fn(),
   mockActorRemove: vi.fn().mockResolvedValue(undefined),
+  mockGroupShow: vi.fn(),
   mockRegisterActor: vi.fn().mockResolvedValue({ actorId: "child-actor-id" }),
   mockReply: vi.fn().mockResolvedValue({ event: { id: "reply-evt-1" }, ack_event: null }),
   mockSend: vi.fn().mockResolvedValue({ event: { id: "evt-1" }, ack_event: null }),
 }));
-
 // ---------- module mocks ----------
 
 vi.mock("../src/config.ts", () => ({
@@ -50,6 +51,7 @@ vi.mock("../src/client.ts", () => ({
       actorRemove: mockActorRemove,
       send: mockSend,
       reply: mockReply,
+      groupShow: mockGroupShow,
     };
   }),
   BridgeClientError: class BridgeClientError extends Error {
@@ -79,7 +81,6 @@ vi.mock("../src/streamer.ts", () => ({
   }),
 }));
 
-
 vi.mock("../src/inbox-queue.ts", () => ({
   InboxQueue: vi.fn(function () {
     return { enqueue: vi.fn(), wake: vi.fn(), destroy: vi.fn() };
@@ -96,6 +97,20 @@ beforeEach(() => {
   mockConnect.mockResolvedValue(undefined);
   mockSend.mockResolvedValue({ event: { id: "evt-1" }, ack_event: null });
   mockReply.mockResolvedValue({ event: { id: "reply-evt-1" }, ack_event: null });
+  mockGroupShow.mockResolvedValue({
+    group: { group_id: "test-group", title: "Test Group" },
+    actors: [
+      {
+        id: "foreman-01",
+        title: "Foreman",
+        runtime: "python",
+        runner: "anthropic",
+        role: "foreman",
+      },
+      { id: "worker-02", title: "Worker", runtime: "python", runner: "openai", role: "peer" },
+      { id: "observer-03", title: "Observer", runtime: "go", runner: "human", role: "peer" },
+    ],
+  });
   // Clean any CCCC_PARENT_ACTOR_* env vars between tests
   for (const key of Object.keys(process.env)) {
     if (key.startsWith("CCCC_PARENT_ACTOR_")) {
@@ -665,7 +680,7 @@ test("parent session sets env var for future sub-agents", async () => {
 
 // ---------- tool registration tests ----------
 
-test("registers cccc_send and cccc_reply tools on parent session_start", async () => {
+test("registers all tools on parent session_start", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
@@ -679,10 +694,12 @@ test("registers cccc_send and cccc_reply tools on parent session_start", async (
   mod(pi);
   await triggerSessionStart(pi);
 
-  expect(pi.registerTool).toHaveBeenCalledTimes(3);
+  expect(pi.registerTool).toHaveBeenCalledTimes(4);
   const toolNames = pi._registeredTools.map((t: any) => t.name);
   expect(toolNames).toContain("cccc_send");
   expect(toolNames).toContain("cccc_reply");
+  expect(toolNames).toContain("cccc_whoami");
+  expect(toolNames).toContain("cccc_list_actors");
 });
 
 test("cccc_send tool has correct parameter schema", async () => {
@@ -934,4 +951,116 @@ test("cccc_whoami tool returns actor ID and group IDs", async () => {
   expect(result.content[0].text).toContain("actor-123");
   expect(result.content[0].text).toContain("group-a");
   expect(result.content[0].text).toContain("group-b");
+});
+
+// ---------- cccc_list_actors tool tests ----------
+
+test("registers cccc_list_actors tool on session_start", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(pi.registerTool).toHaveBeenCalled();
+  const toolNames = pi._registeredTools.map((t: any) => t.name);
+  expect(toolNames).toContain("cccc_list_actors");
+});
+
+test("cccc_list_actors tool has no parameters", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const tool = pi._registeredTools.find((t: any) => t.name === "cccc_list_actors");
+  expect(tool).toBeDefined();
+  expect(tool.parameters.properties).toEqual({});
+});
+
+test("cccc_list_actors tool execute calls client.groupShow with first group", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const tool = pi._registeredTools.find((t: any) => t.name === "cccc_list_actors");
+  const result = await tool.execute("call-1", {}, undefined, undefined, {});
+
+  expect(mockGroupShow).toHaveBeenCalledWith("test-group");
+  expect(result.content[0].text).toContain("foreman-01");
+  expect(result.content[0].text).toContain("Foreman");
+  expect(result.content[0].text).toContain("python");
+  expect(result.content[0].text).toContain("anthropic");
+  expect(result.content[0].text).toContain("worker-02");
+  expect(result.content[0].text).toContain("observer-03");
+});
+
+test("cccc_list_actors tool is not registered when no groups are connected", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  // No triggerSessionStart — session_start returns early when groups empty
+
+  const toolNames = pi._registeredTools.map((t: any) => t.name);
+  expect(toolNames).not.toContain("cccc_list_actors");
+  // Other tools also not registered
+  expect(toolNames).not.toContain("cccc_send");
+  expect(toolNames).not.toContain("cccc_reply");
+});
+
+test("cccc_list_actors tool warns when multiple groups connected", async () => {
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    mockLoadConfig.mockReturnValue({
+      daemonHost: "localhost",
+      daemonPort: 9765,
+      groups: ["group-a", "group-b"],
+      actorId: null,
+      pollIntervalMs: 3000,
+    });
+    mockEnsureRegistered.mockResolvedValue("actor-123");
+
+    const pi = createMockPi();
+    mod(pi);
+    await triggerSessionStart(pi);
+
+    const tool = pi._registeredTools.find((t: any) => t.name === "cccc_list_actors");
+    await tool.execute("call-1", {}, undefined, undefined, {});
+
+    expect(mockGroupShow).toHaveBeenCalledWith("group-a");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Multiple groups connected"));
+  } finally {
+    warnSpy.mockRestore();
+  }
 });
