@@ -7,6 +7,7 @@ import type {
   EventStreamItem,
   GroupsResult,
   GroupShowResult,
+  ReplyOptions,
   SendOptions,
   SendCrossGroupOptions,
   SendResult,
@@ -18,6 +19,7 @@ export type {
   CCCSEvent,
   GroupsResult,
   GroupShowResult,
+  ReplyOptions,
   SendOptions,
   SendCrossGroupOptions,
   SendResult,
@@ -203,6 +205,20 @@ export class CCCCBridgeClient {
     } catch (err) {
       console.error("send failed:", err);
       throw new BridgeClientError("send failed", err);
+    }
+  }
+
+  /**
+   * Reply to a specific event within a group.
+   * Wraps the SDK's `reply` which creates a reply linked to an original event.
+   */
+  async reply(options: ReplyOptions): Promise<SendResult> {
+    this._ensureConnected();
+    try {
+      return await this._client!.reply(options);
+    } catch (err) {
+      console.error("reply failed:", err);
+      throw new BridgeClientError("reply failed", err);
     }
   }
 

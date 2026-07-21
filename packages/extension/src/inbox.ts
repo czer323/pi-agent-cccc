@@ -22,7 +22,7 @@ export function formatMessage(event: CCCSEvent): string {
   const by = event.by ?? "unknown";
   const raw = event.data?.text;
   const text = typeof raw === "string" ? raw : "(no text)";
-  return `New CCCC message from ${by}:\n\n${text}\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_reply or cccc_send MCP tool so your reply is visible to all group members in the CCCC Web UI.`;
+  return `New CCCC message from ${by}:\n\n${text}\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.`;
 }
 
 /**

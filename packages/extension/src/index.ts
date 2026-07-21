@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { loadConfig } from "./config.ts";
 import { defaultBridgeConfig, BridgeClientError } from "./types.ts";
 import { CCCCBridgeClient } from "./client.ts";
@@ -39,6 +40,120 @@ function deriveChildActorId(parentActorId: string): string {
 
 export default function (pi: ExtensionAPI) {
   const connections = new Map<string, GroupConnection>();
+
+  /**
+   * Register cccc_send and cccc_reply tools so the agent can send messages
+   * and reply to events through the bridge's daemon connection.
+   */
+  function registerTools() {
+    // ---- cccc_send tool ----
+    pi.registerTool({
+      name: "cccc_send",
+      label: "CCCC Send",
+      description: "Send a message to a CCCC group. All group members will see the message.",
+      promptSnippet: "Send messages to CCCC groups",
+      promptGuidelines: [
+        "Use cccc_send to send messages to CCCC groups",
+        "Use cccc_reply to reply to specific events",
+      ],
+      parameters: Type.Object({
+        text: Type.String({ description: "Message text to send" }),
+        groupId: Type.Optional(
+          Type.String({
+            description: "Group ID (defaults to first connected group)",
+          }),
+        ),
+        to: Type.Optional(
+          Type.String({
+            description: "Recipient actor ID or @all (default: @all)",
+          }),
+        ),
+      }),
+      execute: async (_toolCallId, params) => {
+        const groupId = params.groupId ?? connections.keys().next().value;
+        if (!groupId || !connections.has(groupId)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: Not connected to group "${groupId || "(none)"}"`,
+              },
+            ],
+            details: {},
+          };
+        }
+        if (!params.groupId && connections.size > 1) {
+          console.warn(
+            `[cccc-bridge] Multiple groups connected; using first group "${groupId}" for cccc_send. Specify groupId to target a specific group.`,
+          );
+        }
+        const conn = connections.get(groupId)!;
+        const to = params.to ? [params.to] : undefined;
+        const result = await conn.client.send({ groupId, text: params.text, to });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Message sent (event_id: ${result.event.id})`,
+            },
+          ],
+          details: { eventId: result.event.id, groupId },
+        };
+      },
+    });
+
+    // ---- cccc_reply tool ----
+    pi.registerTool({
+      name: "cccc_reply",
+      label: "CCCC Reply",
+      description: "Reply to an existing CCCC message by event ID.",
+      promptSnippet: "Reply to specific CCCC messages",
+      parameters: Type.Object({
+        text: Type.String({ description: "Reply text" }),
+        eventId: Type.String({ description: "ID of the event to reply to" }),
+        groupId: Type.Optional(
+          Type.String({
+            description: "Group ID (defaults to first connected group)",
+          }),
+        ),
+      }),
+      execute: async (_toolCallId, params) => {
+        const groupId = params.groupId ?? connections.keys().next().value;
+        if (!groupId || !connections.has(groupId)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: Not connected to group "${groupId || "(none)"}"`,
+              },
+            ],
+            details: {},
+          };
+        }
+        if (!params.groupId && connections.size > 1) {
+          console.warn(
+            `[cccc-bridge] Multiple groups connected; using first group "${groupId}" for cccc_reply. Specify groupId to target a specific group.`,
+          );
+        }
+        const conn = connections.get(groupId)!;
+        const result = await conn.client.reply({
+          groupId,
+          replyTo: params.eventId,
+          text: params.text,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Reply sent (event_id: ${result.event.id})`,
+            },
+          ],
+          details: { eventId: result.event.id, groupId },
+        };
+      },
+    });
+  }
+
   pi.on("session_start", async (_event, ctx) => {
     const config = loadConfig();
 
@@ -174,6 +289,11 @@ export default function (pi: ExtensionAPI) {
           "info",
         );
       }
+    }
+
+    // Register tools for both parent and sub-agent sessions when connected
+    if (connections.size > 0) {
+      registerTools();
     }
   });
 
