@@ -39,6 +39,7 @@ function createMocks() {
     (options: EventsStreamOptions): AsyncGenerator<EventStreamItem>;
     mockReturnValue: (val: AsyncGenerator<EventStreamItem>) => typeof eventsStream;
     mockReturnValueOnce: (val: AsyncGenerator<EventStreamItem>) => typeof eventsStream;
+    mock: { calls: Array<Array<EventsStreamOptions>> };
   };
 
   const client = { eventsStream } as unknown as CCCCBridgeClient;
@@ -240,5 +241,111 @@ describe("InboxStreamer", () => {
       seenIds: existingSeen,
     });
     expect(streamer.seenIds).toBe(existingSeen);
+  });
+
+  test("subscribes to chat.cross_group_receipt events", async () => {
+    const { client, eventsStream, pi, onFallback } = createMocks();
+    eventsStream.mockReturnValue(mockGenerator([]));
+
+    const streamer = new InboxStreamer({
+      client,
+      groupId: testGroupId,
+      actorId: testActorId,
+      pi,
+      onFallback,
+    });
+    streamer.start();
+
+    await vi.waitFor(() => expect(eventsStream).toHaveBeenCalledTimes(1));
+    const callOptions = eventsStream.mock.calls[0][0];
+    expect(callOptions.kinds).toContain("chat.message");
+    expect(callOptions.kinds).toContain("chat.cross_group_receipt");
+    streamer.stop();
+  });
+
+  test("delivers chat.cross_group_receipt event with provenance", async () => {
+    const { client, eventsStream, pi, sendMessage, onFallback } = createMocks();
+    const event = makeEvent({
+      id: "evt-receipt-1",
+      kind: "chat.cross_group_receipt",
+      by: "bridge",
+      data: {
+        source_event_id: "orig-evt-1",
+        dst_group_id: "group-2",
+        status: "delivered",
+      },
+    });
+    eventsStream.mockReturnValue(mockGenerator([makeEventStreamItem(event)]));
+
+    const streamer = new InboxStreamer({
+      client,
+      groupId: testGroupId,
+      actorId: testActorId,
+      pi,
+      onFallback,
+    });
+    streamer.start();
+
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+    expect(sendMessage).toHaveBeenCalledWith(
+      {
+        customType: "cccc-inbox",
+        content: "New CCCC message from bridge:\n\n(no text)",
+        display: true,
+        details: {
+          groupId: testGroupId,
+          eventId: "evt-receipt-1",
+          by: "bridge",
+          text: "(no text)",
+          srcGroupId: testGroupId,
+          srcEventId: "orig-evt-1",
+        },
+      },
+      { triggerTurn: true },
+    );
+    streamer.stop();
+  });
+
+  test("delivers chat.message event with srcGroupId/srcEventId when present", async () => {
+    const { client, eventsStream, pi, sendMessage, onFallback } = createMocks();
+    const event = makeEvent({
+      id: "evt-fwd-1",
+      kind: "chat.message",
+      by: "hermes",
+      data: {
+        text: "Forwarded message",
+        src_group_id: "group-origin",
+        src_event_id: "orig-evt-42",
+      },
+    });
+    eventsStream.mockReturnValue(mockGenerator([makeEventStreamItem(event)]));
+
+    const streamer = new InboxStreamer({
+      client,
+      groupId: testGroupId,
+      actorId: testActorId,
+      pi,
+      onFallback,
+    });
+    streamer.start();
+
+    await vi.waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1));
+    expect(sendMessage).toHaveBeenCalledWith(
+      {
+        customType: "cccc-inbox",
+        content: "New CCCC message from hermes:\n\nForwarded message",
+        display: true,
+        details: {
+          groupId: testGroupId,
+          eventId: "evt-fwd-1",
+          by: "hermes",
+          text: "Forwarded message",
+          srcGroupId: "group-origin",
+          srcEventId: "orig-evt-42",
+        },
+      },
+      { triggerTurn: true },
+    );
+    streamer.stop();
   });
 });

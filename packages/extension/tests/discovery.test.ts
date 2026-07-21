@@ -20,6 +20,7 @@ function createMockClient(): CCCCClientLike {
     inboxList: vi.fn(),
     inboxMarkRead: vi.fn(),
     eventsStream: vi.fn() as any,
+    sendCrossGroup: vi.fn(),
     groups: vi.fn(),
     groupShow: vi.fn(),
   };

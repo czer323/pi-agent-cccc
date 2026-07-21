@@ -16,6 +16,7 @@ function createMockClient(): CCCCClientLike {
     inboxList: vi.fn(),
     inboxMarkRead: vi.fn(),
     eventsStream: vi.fn() as any,
+    sendCrossGroup: vi.fn(),
     groups: vi.fn(),
     groupShow: vi.fn(),
   };
@@ -127,6 +128,53 @@ test("inboxMarkRead calls SDK with correct positional args", async () => {
   await client.inboxMarkRead({ groupId: "group-1", actorId: "actor-1", eventId: "evt-1" });
 
   expect(inboxMarkRead).toHaveBeenCalledWith("group-1", "actor-1", "evt-1");
+});
+
+// ---- sendCrossGroup ----
+
+test("sendCrossGroup calls SDK with correct args", async () => {
+  const mock = createMockClient();
+  const sendCrossGroup = vi.fn().mockResolvedValue({
+    src_event: { id: "src-evt-1", kind: "chat.message", group_id: "group-1", data: {} },
+    dst_event: { id: "dst-evt-1", kind: "chat.message", group_id: "group-2", data: {} },
+  });
+  mock.sendCrossGroup = sendCrossGroup;
+  const client = new CCCCBridgeClient(mock);
+  await client.connect(testConfig);
+
+  const result = await client.sendCrossGroup({
+    groupId: "group-1",
+    dstGroupId: "group-2",
+    text: "Hello from group-1",
+  });
+
+  expect(result).toEqual({
+    src_event: { id: "src-evt-1", kind: "chat.message", group_id: "group-1", data: {} },
+    dst_event: { id: "dst-evt-1", kind: "chat.message", group_id: "group-2", data: {} },
+  });
+  expect(sendCrossGroup).toHaveBeenCalledWith({
+    groupId: "group-1",
+    dstGroupId: "group-2",
+    text: "Hello from group-1",
+  });
+});
+
+test("sendCrossGroup without connect throws BridgeClientError", async () => {
+  const client = new CCCCBridgeClient();
+  await expect(
+    client.sendCrossGroup({ groupId: "g", dstGroupId: "g2", text: "hi" }),
+  ).rejects.toThrow("Not connected");
+});
+
+test("sendCrossGroup wraps SDK error as BridgeClientError", async () => {
+  const mock = createMockClient();
+  mock.sendCrossGroup = vi.fn().mockRejectedValue(new Error("SDK error"));
+  const client = new CCCCBridgeClient(mock);
+  await client.connect(testConfig);
+
+  await expect(
+    client.sendCrossGroup({ groupId: "g", dstGroupId: "g2", text: "hi" }),
+  ).rejects.toThrow("sendCrossGroup failed");
 });
 
 // ---- groups / groupShow ----

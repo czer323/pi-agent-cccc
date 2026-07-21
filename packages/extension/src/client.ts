@@ -7,9 +7,19 @@ import type {
   EventStreamItem,
   GroupsResult,
   GroupShowResult,
+  SendCrossGroupOptions,
+  SendResult,
 } from "./types.ts";
 import { BridgeClientError, defaultBridgeConfig } from "./types.ts";
-export type { CCCCClientLike, BridgeClientConfig, CCCSEvent, GroupsResult, GroupShowResult };
+export type {
+  CCCCClientLike,
+  BridgeClientConfig,
+  CCCSEvent,
+  GroupsResult,
+  GroupShowResult,
+  SendResult,
+  SendCrossGroupOptions,
+};
 export { BridgeClientError, defaultBridgeConfig };
 
 /**
@@ -140,6 +150,20 @@ export class CCCCBridgeClient {
   eventsStream(options: EventsStreamOptions): AsyncGenerator<EventStreamItem> {
     this._ensureConnected();
     return this._client!.eventsStream(options);
+  }
+
+  /**
+   * Send a message across groups via the Group Bridge.
+   * Wraps the SDK's sendCrossGroup which creates a source message in the
+   * origin group and a forwarded message in the destination group.
+   */
+  async sendCrossGroup(options: SendCrossGroupOptions): Promise<SendResult> {
+    this._ensureConnected();
+    try {
+      return await this._client!.sendCrossGroup(options);
+    } catch (err) {
+      throw new BridgeClientError("sendCrossGroup failed", err);
+    }
   }
   /**
    * List all groups known to the daemon.
