@@ -25,6 +25,7 @@ function createMockClient(): CCCCClientLike {
     groups: vi.fn(),
     groupShow: vi.fn(),
     send: vi.fn(),
+    reply: vi.fn(),
   };
 }
 

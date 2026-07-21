@@ -102,6 +102,7 @@ function createMockPi() {
     }),
     _handlers: handlers,
     _notify: notify,
+    registerTool: vi.fn(),
     _setStatus: setStatus,
   };
   return pi as any;

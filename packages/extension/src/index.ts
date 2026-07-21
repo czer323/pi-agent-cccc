@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { loadConfig } from "./config.ts";
 import { defaultBridgeConfig, BridgeClientError } from "./types.ts";
 import { CCCCBridgeClient } from "./client.ts";
@@ -173,6 +174,54 @@ export default function (pi: ExtensionAPI) {
           `CCCC bridge connected (${connectedCount} group${connectedCount !== 1 ? "s" : ""})`,
           "info",
         );
+      }
+
+      // Register tools the agent can use to reply through the bridge.
+      // These bypass the CCCC MCP server — they call the daemon directly
+      // through the bridge's existing TCP connection.
+      if (connectedCount > 0) {
+        const firstGroupId = connections.keys().next().value as string;
+
+        pi.registerTool({
+          name: "cccc_send",
+          label: "Send CCCC Message",
+          description:
+            "Send a message to a CCCC group. All group members using the same group will see it in their session. " +
+            "Use this to reply to someone or add information to the shared conversation.",
+          parameters: Type.Object({
+            text: Type.String({ description: "Message text to send" }),
+            groupId: Type.Optional(
+              Type.String({ description: "Group ID (defaults to the first connected group)" }),
+            ),
+            to: Type.Optional(
+              Type.Array(Type.String(), {
+                description:
+                  "Recipient actor IDs or @all (default). Use @all to reach everyone, or specific actor IDs.",
+              }),
+            ),
+          }),
+          async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+            const groupId = params.groupId ?? firstGroupId;
+            const conn = connections.get(groupId);
+            if (!conn) {
+              return {
+                content: [{ type: "text", text: `Not connected to group "${groupId}"` }],
+                details: {},
+              };
+            }
+            const to = params.to?.length ? params.to : ["@all"];
+            try {
+              const result = await conn.client.send({ groupId, text: params.text, to });
+              return {
+                content: [{ type: "text", text: "Message sent to CCCC group." }],
+                details: { eventId: result.event.id },
+              };
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              return { content: [{ type: "text", text: `Failed to send: ${msg}` }], details: {} };
+            }
+          },
+        });
       }
     }
   });

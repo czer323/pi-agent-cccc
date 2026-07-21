@@ -11,6 +11,7 @@ import type {
   SendCrossGroupOptions,
   SendOptions,
   SendResult,
+  ReplyOptions,
 } from "cccc-sdk";
 
 /**
@@ -44,6 +45,7 @@ export interface CCCCClientLike {
   groups(): Promise<GroupsResult>;
   send(options: SendOptions): Promise<SendResult>;
   sendCrossGroup(options: SendCrossGroupOptions): Promise<SendResult>;
+  reply(options: ReplyOptions): Promise<SendResult>;
   groupShow(groupId: string): Promise<GroupShowResult>;
 }
 
@@ -54,6 +56,7 @@ export type {
   SendOptions,
   SendResult,
   SendCrossGroupOptions,
+  ReplyOptions,
 };
 
 /**

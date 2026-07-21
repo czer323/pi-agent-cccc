@@ -6,6 +6,7 @@ packages:
 catalogMode: prefer
 
 catalog:
+  "@sinclair/typebox": ^0.34.52
   "@types/node": ^24
   typescript: ^7.0.0
   vite: npm:@voidzero-dev/vite-plus-core@^0.2.5

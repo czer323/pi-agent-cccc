@@ -10,6 +10,7 @@ import type {
   SendOptions,
   SendCrossGroupOptions,
   SendResult,
+  ReplyOptions,
 } from "./types.ts";
 import { BridgeClientError, defaultBridgeConfig } from "./types.ts";
 export type {
@@ -203,6 +204,19 @@ export class CCCCBridgeClient {
     } catch (err) {
       console.error("send failed:", err);
       throw new BridgeClientError("send failed", err);
+    }
+  }
+  /**
+   * Reply to a specific event in the group.
+   * Wraps the SDK's `reply` which creates a response linked to the original event.
+   */
+  async reply(options: ReplyOptions): Promise<SendResult> {
+    this._ensureConnected();
+    try {
+      return await this._client!.reply(options);
+    } catch (err) {
+      console.error("reply failed:", err);
+      throw new BridgeClientError("reply failed", err);
     }
   }
 
