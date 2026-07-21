@@ -8,6 +8,8 @@ const {
   mockConnect,
   mockDisconnect,
   mockEnsureRegistered,
+  mockStreamerStart,
+  mockStreamerStop,
   mockPollerStart,
   mockPollerStop,
 } = vi.hoisted(() => ({
@@ -15,6 +17,8 @@ const {
   mockConnect: vi.fn().mockResolvedValue(undefined),
   mockDisconnect: vi.fn(),
   mockEnsureRegistered: vi.fn(),
+  mockStreamerStart: vi.fn(),
+  mockStreamerStop: vi.fn(),
   mockPollerStart: vi.fn(),
   mockPollerStop: vi.fn(),
 }));
@@ -50,12 +54,20 @@ vi.mock("../src/inbox.ts", () => ({
   }),
 }));
 
+vi.mock("../src/streamer.ts", () => ({
+  // Must use a regular function (not arrow) so it works with `new InboxStreamer()`
+  InboxStreamer: vi.fn(function () {
+    return { start: mockStreamerStart, stop: mockStreamerStop };
+  }),
+}));
+
 // ---------- helpers ----------
 
 beforeEach(() => {
   vi.resetAllMocks();
   mockConnect.mockResolvedValue(undefined);
 });
+
 function createMockPi() {
   const handlers = new Map<string, Function>();
   const notify = vi.fn();
@@ -98,11 +110,11 @@ test("default export is a function", () => {
   expect(typeof mod).toBe("function");
 });
 
-test("inert when CCCC_GROUP_ID is empty", async () => {
+test("inert when groups array is empty", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
-    groupId: "",
+    groups: [],
     actorId: null,
     pollIntervalMs: 3000,
   });
@@ -113,14 +125,14 @@ test("inert when CCCC_GROUP_ID is empty", async () => {
 
   expect(mockConnect).not.toHaveBeenCalled();
   expect(mockEnsureRegistered).not.toHaveBeenCalled();
-  expect(mockPollerStart).not.toHaveBeenCalled();
+  expect(mockStreamerStart).not.toHaveBeenCalled();
 });
 
-test("successful startup connects, registers, starts polling", async () => {
+test("single group startup connects, registers, starts streamer", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
-    groupId: "test-group",
+    groups: ["test-group"],
     actorId: null,
     pollIntervalMs: 3000,
   });
@@ -132,14 +144,55 @@ test("successful startup connects, registers, starts polling", async () => {
 
   expect(mockConnect).toHaveBeenCalledTimes(1);
   expect(mockEnsureRegistered).toHaveBeenCalledTimes(1);
-  expect(mockPollerStart).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
+});
+
+test("multi-group startup connects, registers, starts streamer per group", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["group-a", "group-b", "group-c"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockConnect).toHaveBeenCalledTimes(3);
+  expect(mockEnsureRegistered).toHaveBeenCalledTimes(3);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(3);
+});
+
+test("connection failure in one group does not block others", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["good-group", "bad-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+  // Second connect call fails
+  mockConnect.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+  const pi = createMockPi();
+  mod(pi);
+  await expect(triggerSessionStart(pi)).resolves.toBeUndefined();
+
+  // Both groups tried to connect
+  expect(mockConnect).toHaveBeenCalledTimes(2);
+  // Only one group succeeded — one streamer started
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
 });
 
 test("connection failure degrades gracefully", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
-    groupId: "test-group",
+    groups: ["test-group"],
     actorId: null,
     pollIntervalMs: 3000,
   });
@@ -151,14 +204,14 @@ test("connection failure degrades gracefully", async () => {
 
   expect(mockConnect).toHaveBeenCalledTimes(1);
   expect(mockEnsureRegistered).not.toHaveBeenCalled();
-  expect(mockPollerStart).not.toHaveBeenCalled();
+  expect(mockStreamerStart).not.toHaveBeenCalled();
 });
 
-test("session_shutdown stops poller and disconnects client", async () => {
+test("session_shutdown stops streamer and disconnects client for single group", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
-    groupId: "test-group",
+    groups: ["test-group"],
     actorId: null,
     pollIntervalMs: 3000,
   });
@@ -167,19 +220,40 @@ test("session_shutdown stops poller and disconnects client", async () => {
   const pi = createMockPi();
   mod(pi);
   await triggerSessionStart(pi);
-  expect(mockPollerStart).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
 
   await triggerSessionShutdown(pi);
 
-  expect(mockPollerStop).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStop).toHaveBeenCalledTimes(1);
   expect(mockDisconnect).toHaveBeenCalledTimes(1);
+});
+
+test("session_shutdown stops all streamers and disconnects all clients for multi-group", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["group-a", "group-b"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+  expect(mockStreamerStart).toHaveBeenCalledTimes(2);
+
+  await triggerSessionShutdown(pi);
+
+  expect(mockStreamerStop).toHaveBeenCalledTimes(2);
+  expect(mockDisconnect).toHaveBeenCalledTimes(2);
 });
 
 test("UI calls are guarded by ctx.hasUI", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
-    groupId: "test-group",
+    groups: ["test-group"],
     actorId: null,
     pollIntervalMs: 3000,
   });
@@ -191,14 +265,32 @@ test("UI calls are guarded by ctx.hasUI", async () => {
   // When hasUI is true, setStatus and notify should be called with success
   await triggerSessionStart(pi, true);
   expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected");
-  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected", "info");
+  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (1 group)", "info");
+});
+
+test("UI notifies for multi-group connection when hasUI is true", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["group-a", "group-b"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+
+  await triggerSessionStart(pi, true);
+  expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected");
+  expect(pi._notify).toHaveBeenCalledWith("CCCC bridge connected (2 groups)", "info");
 });
 
 test("UI calls notify on connection failure when hasUI is true", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
-    groupId: "test-group",
+    groups: ["test-group"],
     actorId: null,
     pollIntervalMs: 3000,
   });
@@ -209,5 +301,5 @@ test("UI calls notify on connection failure when hasUI is true", async () => {
   await triggerSessionStart(pi, true);
 
   expect(pi._notify).toHaveBeenCalled();
-  expect(pi._setStatus).toHaveBeenCalledWith("cccc", "disconnected");
+  expect(pi._setStatus).not.toHaveBeenCalled(); // no connections succeeded
 });
