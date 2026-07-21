@@ -82,28 +82,31 @@ The extension should use the Pi Agent extension API:
 ```
 
 Key imports:
+
 - `@earendil-works/pi-coding-agent` — `ExtensionAPI`, `ExtensionContext`
 - `node:net` — for TCP connection to daemon
 
 Relevant events (from `packages/coding-agent/docs/extensions.md`):
 
-| Event | When | Purpose |
-|-------|------|---------|
-| `session_start` | Session starts/starts | Open TCP connection to daemon, subscribe to events_stream |
-| `before_agent_start` | Before each turn | Check for buffered CCCC messages and inject via event.message |
-| `agent_settled` | Agent finishes all work | Mark messages read, continue event stream subscription |
-| `session_shutdown` | Session ends | Close connection, clean up |
+| Event                | When                    | Purpose                                                       |
+| -------------------- | ----------------------- | ------------------------------------------------------------- |
+| `session_start`      | Session starts/starts   | Open TCP connection to daemon, subscribe to events_stream     |
+| `before_agent_start` | Before each turn        | Check for buffered CCCC messages and inject via event.message |
+| `agent_settled`      | Agent finishes all work | Mark messages read, continue event stream subscription        |
+| `session_shutdown`   | Session ends            | Close connection, clean up                                    |
 
 ## CCCC Daemon IPC Protocol
 
 Daemon IPC is newline-delimited JSON over TCP:
 
 **Request:**
+
 ```json
 {"v": 1, "op": "<operation>", "args": {...}}
 ```
 
 **Response:**
+
 ```json
 {"v": 1, "ok": true/false, "result": {...}, "error": null}
 ```
@@ -111,6 +114,7 @@ Daemon IPC is newline-delimited JSON over TCP:
 ### Key Operations
 
 #### events_stream
+
 Subscribe to real-time ledger events. Opens a persistent TCP connection; events are
 pushed as they happen (30s heartbeat). Filtered by group_id, kinds.
 
@@ -126,6 +130,7 @@ args: {
 Response: continuous stream of NDJSON event objects.
 
 #### send
+
 Send a chat message.
 
 ```
@@ -140,6 +145,7 @@ args: {
 ```
 
 #### reply
+
 Reply to a specific message.
 
 ```
@@ -154,6 +160,7 @@ args: {
 ```
 
 #### inbox_list
+
 Check for unread messages (fallback/initial sync).
 
 ```
@@ -167,6 +174,7 @@ args: {
 ```
 
 #### inbox_mark_read
+
 Mark a message as read.
 
 ```
@@ -185,6 +193,7 @@ TCP to `192.168.7.163:9765`. Each request is a separate TCP connection
 
 For `events_stream`, the daemon pushes events over the open socket. To handle this
 from a Pi Agent extension, either:
+
 - Use a background socket connection with an async iterator
 - Poll via `inbox_list` as a simpler fallback (less real-time, but deterministic)
 
@@ -204,18 +213,18 @@ of the Pi Agent extension.
 
 ## Related Files
 
-| Path | Description |
-|------|-------------|
-| `~/git/cccc-sdk/` | CCCC SDK repo (Python + TypeScript) |
-| `~/git/cccc-sdk/python/examples/stream.py` | events_stream subscription example |
-| `~/git/cccc-sdk/python/examples/auto_ack_attention.py` | Auto-ACK pattern |
-| `~/git/cccc-sdk/python/examples/werewolf/` | Full game using events_stream |
-| `~/git/pi/packages/coding-agent/docs/extensions.md` | Pi Agent extension API docs |
-| `~/git/herdr/src/integration/assets/opencode/herdr-agent-state.js` | Example OpenCode plugin (session state reporting to herdr) |
-| `~/.pi/agent/extensions/pi-link.ts` | Existing Pi Agent extension (inter-terminal WebSocket chat) |
-| `~/git/cccc/` | CCCC core source |
-| `~/git/cccc/docs/standards/CCCC_DAEMON_IPC_V1.md` | Daemon IPC spec |
-| `~/git/cccc/docs/standards/CCCS_V1.md` | Collaboration protocol spec |
+| Path                                                               | Description                                                 |
+| ------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `~/git/cccc-sdk/`                                                  | CCCC SDK repo (Python + TypeScript)                         |
+| `~/git/cccc-sdk/python/examples/stream.py`                         | events_stream subscription example                          |
+| `~/git/cccc-sdk/python/examples/auto_ack_attention.py`             | Auto-ACK pattern                                            |
+| `~/git/cccc-sdk/python/examples/werewolf/`                         | Full game using events_stream                               |
+| `~/git/pi/packages/coding-agent/docs/extensions.md`                | Pi Agent extension API docs                                 |
+| `~/git/herdr/src/integration/assets/opencode/herdr-agent-state.js` | Example OpenCode plugin (session state reporting to herdr)  |
+| `~/.pi/agent/extensions/pi-link.ts`                                | Existing Pi Agent extension (inter-terminal WebSocket chat) |
+| `~/git/cccc/`                                                      | CCCC core source                                            |
+| `~/git/cccc/docs/standards/CCCC_DAEMON_IPC_V1.md`                  | Daemon IPC spec                                             |
+| `~/git/cccc/docs/standards/CCCS_V1.md`                             | Collaboration protocol spec                                 |
 
 ## Open Questions
 

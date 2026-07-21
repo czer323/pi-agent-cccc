@@ -68,6 +68,7 @@ or any other agent-to-agent spawn) MUST open with this block:
 
 ```md Preamble
 ## READ THIS FIRST
+
 Read AGENTS.md for the [Role] workflow before doing anything else.
 Run `br capabilities --json` to see the available br commands if context is needed (if `.beads/` is missing, run `br init` first).
 The assignment below is your task. The docs above are how to execute it.
@@ -78,15 +79,15 @@ Do not skip this step.
 
 Planner MUST read: `planning-and-task-breakdown`, `incremental-implementation`. Run `br robot-docs guide` for br command reference (fallback: `br --help`).
 
-Note: Do not respond with a full report of the environment on start.  You will however be asked, so do the research and be prepared.
+Note: Do not respond with a full report of the environment on start. You will however be asked, so do the research and be prepared.
 
 1. **Collaborate** work with user to determine goals and ask questions to help determine scope.
-2. **Research** the topic by checking existing code or documentation.  Web search and Context7 tools for building confidence in idea.
+2. **Research** the topic by checking existing code or documentation. Web search and Context7 tools for building confidence in idea.
 3. **Agree** Both user and planner must agree to the goal.
 4. **Skim** the codebase for relevant existing patterns (config, models, CLI).
 5. **Map** — Run `bv --robot-triage --format toon` for the current graph state. Map dependencies — what needs to exist before what.
 6. **Slice** into ordered, vertical, testable increments. Each slice should leave the system working.
-7. **Output** — cards created in br tracking the goal and tasks necessary to accomplish.  `br lint --json` must pass.
+7. **Output** — cards created in br tracking the goal and tasks necessary to accomplish. `br lint --json` must pass.
 8. **Review** — Re-run `bv --robot-triage --format toon` to verify all dependencies are wired. Run `bv --robot-suggest --format toon` to catch missing edges `bv` might have spotted.
 9. **Delegation** If asked to spawn an implementer, provide only the following information:
    - Role: Implementer
@@ -102,15 +103,17 @@ Implementer MUST read: `test-driven-development`, `incremental-implementation`, 
 
 ```md Escape Hatches
 ## BLOCKER: Stop. IRC the planner with:
+
 - What you're blocked on
 - What you tried (2-3 things max)
 - What you need
-Do NOT attempt workaround. This IS task completion for this slice.  Planner will assist with unblocking or providing guidance.
+  Do NOT attempt workaround. This IS task completion for this slice. Planner will assist with unblocking or providing guidance.
 
 ## OUT-OF-SCOPE DISCOVERY: Create a br issue.
+
 br create --title="Brief discovery" \
-   --description="What I found, where, and why it's out of scope" \
-   --type=task --priority=3
+--description="What I found, where, and why it's out of scope" \
+--type=task --priority=3
 ```
 
 1. **Claim** — `bv --robot-next --format toon` returns an issue ID. Claim it with `br update <id> --claim` where `<id>` is the ID from bv's output.
@@ -125,34 +128,34 @@ br create --title="Brief discovery" \
 6. **Gate** — `vp check`. Red → fix, green → proceed.
 7. **Review** — Gate green? Spawn a `reviewer` subagent on the diff.
    - Open with the Subagent Dispatch Preamble before the review request and provide ONLY the following:
-      - Role: Reviewer
-      - br card ID
-      - Branch name
-      - Specific concerns to flag (if any, otherwise omit)
-8. **Ship** — Push branch. Create PR against `main` using `.github/PULL_REQUEST_TEMPLATE.md`.  Link the br card in the PR body.
+     - Role: Reviewer
+     - br card ID
+     - Branch name
+     - Specific concerns to flag (if any, otherwise omit)
+8. **Ship** — Push branch. Create PR against `main` using `.github/PULL_REQUEST_TEMPLATE.md`. Link the br card in the PR body.
 9. **Merge** — Once reviewer approves, merge via `gh pr merge <number>`.
 10. **Close** — `br close <id>` with implementation notes. Delete the branch.
 11. **Sync** — `br sync --flush-only && git add .beads/ && git commit -m "chore(beads): sync issue state" && git push`.
-`vp check` before every commit. Red → fix, green → commit.
+    `vp check` before every commit. Red → fix, green → commit.
 
 #### Commands
 
 Run `vp <task>` for common development tasks.
 
-| Task | What it does |
-|---|---|
-| `vp check` | **Tollgate.** Runs oxfmt (format) + oxlint + tsc type check. |
-| `vp check --fix` | Auto-format and auto-fix lint, then type check. |
-| `vp test` | Run tests with vitest. |
-| `vp lint` | Lint with oxlint. |
-| `vp format` | Auto-format code with oxfmt. |
+| Task             | What it does                                                 |
+| ---------------- | ------------------------------------------------------------ |
+| `vp check`       | **Tollgate.** Runs oxfmt (format) + oxlint + tsc type check. |
+| `vp check --fix` | Auto-format and auto-fix lint, then type check.              |
+| `vp test`        | Run tests with vitest.                                       |
+| `vp lint`        | Lint with oxlint.                                            |
+| `vp format`      | Auto-format code with oxfmt.                                 |
 
 ### Role: Reviewer
 
 Reviewer MUST Read: `code-review-and-quality`, `test-driven-development/testing-anti-patterns.md`. Run `br robot-docs guide` for br command reference (fallback: `br --help`).
 
-1. **Understand** — read the Subagent Dispatch Preamble.  `br show <id>` for the card's ACs and scope.  Fetch the diff: `git diff main...<branch>`.  Does the diff satisfy the card's acceptance criteria?
-2. **Review tests first** — do they exist? Do they test behavior, not implementation? Would they catch a regression?  Cross-check against the br card's acceptance criteria — does the implementation cover all of them?
+1. **Understand** — read the Subagent Dispatch Preamble. `br show <id>` for the card's ACs and scope. Fetch the diff: `git diff main...<branch>`. Does the diff satisfy the card's acceptance criteria?
+2. **Review tests first** — do they exist? Do they test behavior, not implementation? Would they catch a regression? Cross-check against the br card's acceptance criteria — does the implementation cover all of them?
 3. **Review code** — walk the diff through the five axes:
    - Correctness — edge cases, error paths, race conditions
    - Readability — naming, complexity, unnecessary cleverness
@@ -220,4 +223,3 @@ Closes <issue-id>
 - [ ] Related test(s) added or updated
 - [ ] Acceptance criteria met (br issue)
 ```
-

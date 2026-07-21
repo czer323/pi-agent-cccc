@@ -6,5 +6,7 @@ packages:
 catalogMode: prefer
 
 catalog:
-  '@types/node': ^24
+  "@types/node": ^24
   typescript: ^7.0.0
+  vite: npm:@voidzero-dev/vite-plus-core@^0.2.5
+  vite-plus: ^0.2.5
