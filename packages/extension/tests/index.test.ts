@@ -79,6 +79,12 @@ vi.mock("../src/streamer.ts", () => ({
   }),
 }));
 
+
+vi.mock("../src/inbox-queue.ts", () => ({
+  InboxQueue: vi.fn(function () {
+    return { enqueue: vi.fn(), wake: vi.fn(), destroy: vi.fn() };
+  }),
+}));
 vi.mock("../src/discovery.ts", () => ({
   discoverGroups: mockDiscoverGroups,
 }));

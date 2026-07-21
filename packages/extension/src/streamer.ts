@@ -7,20 +7,17 @@
  * polling-based {@link InboxPoller} after exhausting retries.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CCCCBridgeClient } from "./client.ts";
 import type { EventStreamItem } from "./types.ts";
 import type { EventStreamEvent } from "cccc-sdk";
 import { formatMessage, shouldDeliver } from "./inbox.ts";
-
+import type { InboxQueue } from "./inbox-queue.ts";
 export interface InboxStreamerOptions {
   client: CCCCBridgeClient;
   groupId: string;
   actorId: string;
-  pi: ExtensionAPI;
-  /** Called when stream fails after max retries. Caller starts InboxPoller as fallback. */
+  queue: InboxQueue;
   onFallback: () => void;
-  /** Shared dedup set so the fallback poller inherits seen IDs. Defaults to fresh Set. */
   seenIds?: Set<string>;
 }
 
@@ -138,19 +135,13 @@ export class InboxStreamer {
     };
     if (srcGroupId) details.srcGroupId = srcGroupId;
     if (srcEventId) details.srcEventId = srcEventId;
-
-    this._options.pi.sendMessage(
-      {
-        customType: "cccc-inbox",
-        content: formatMessage(event),
-        display: true,
-        details,
-      },
-      { triggerTurn: true },
-    );
+    this._options.queue.enqueue({
+      content: formatMessage(event),
+      details,
+    });
 
     this.seenIds.add(event.id);
-  }
+}
 
   private _delay(ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {

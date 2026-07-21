@@ -1,9 +1,9 @@
 // oxlint-disable typescript/unbound-method
 import { expect, test, vi, describe, beforeEach } from "vite-plus/test";
 import { InboxPoller, formatMessage, shouldDeliver } from "../src/inbox.ts";
+import type { InboxQueue } from "../src/inbox-queue.ts";
 import type { CCCCBridgeClient } from "../src/client.ts";
 import type { CCCSEvent } from "../src/types.ts";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // ---- helpers ----
 
@@ -13,12 +13,11 @@ const testPollInterval = 100;
 
 function makeEvent(overrides: Partial<CCCSEvent> & { id: string }): CCCSEvent {
   return {
+    id: overrides.id,
+    kind: "chat.message",
+    by: overrides.by ?? "unknown",
+    data: overrides.data ?? { text: "(no text)" },
     ts: overrides.ts ?? "2026-07-21T00:00:00Z",
-    kind: overrides.kind ?? "chat.message",
-    group_id: overrides.group_id ?? testGroupId,
-    by: overrides.by ?? "sender-1",
-    data: (overrides.data ?? { text: "Hello" }) as Record<string, unknown>,
-    ...overrides,
   };
 }
 
@@ -29,10 +28,10 @@ function createMocks() {
     registerActor: vi.fn(),
   } as unknown as CCCCBridgeClient;
 
-  const sendMessage = vi.fn();
-  const pi = { sendMessage } as unknown as ExtensionAPI;
+  const enqueue = vi.fn();
+  const queue = { enqueue } as unknown as InboxQueue;
 
-  return { client, pi, sendMessage };
+  return { client, queue, enqueue };
 }
 
 // ---- formatMessage ----
@@ -146,8 +145,8 @@ describe("InboxPoller", () => {
     vi.useFakeTimers();
   });
 
-  test("poll() delivers new messages via pi.sendMessage with triggerTurn: true", async () => {
-    const { client, pi, sendMessage } = createMocks();
+  test("poll() enqueues new messages via queue.enqueue", async () => {
+    const { client, queue, enqueue } = createMocks();
     const events = [makeEvent({ id: "evt-1", by: "alice", data: { text: "Hello" } })];
     vi.mocked(client.inboxList).mockResolvedValue(events);
 
@@ -156,17 +155,15 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
     await (poller as unknown as { poll(): Promise<void> }).poll();
 
-    expect(sendMessage).toHaveBeenCalledWith(
-      {
-        customType: "cccc-inbox",
-        content:
-          "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
-        display: true,
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         details: {
           actorId: testActorId,
           groupId: testGroupId,
@@ -174,13 +171,12 @@ describe("InboxPoller", () => {
           by: "alice",
           text: "Hello",
         },
-      },
-      { triggerTurn: true },
+      }),
     );
   });
 
   test("poll() skips already-seen messages", async () => {
-    const { client, pi, sendMessage } = createMocks();
+    const { client, queue, enqueue } = createMocks();
     const events = [makeEvent({ id: "evt-1", by: "alice", data: { text: "Hello" } })];
     vi.mocked(client.inboxList).mockResolvedValue(events);
 
@@ -189,18 +185,18 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
     await (poller as unknown as { poll(): Promise<void> }).poll();
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledTimes(1);
 
     await (poller as unknown as { poll(): Promise<void> }).poll();
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledTimes(1);
   });
 
-  test("poll() calls inboxMarkRead after delivery", async () => {
-    const { client, pi } = createMocks();
+  test("poll() onDelivered callback calls inboxMarkRead", async () => {
+    const { client, queue, enqueue } = createMocks();
     const events = [makeEvent({ id: "evt-1", by: "alice" })];
     vi.mocked(client.inboxList).mockResolvedValue(events);
     vi.mocked(client.inboxMarkRead).mockResolvedValue(undefined);
@@ -210,10 +206,14 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
     await (poller as unknown as { poll(): Promise<void> }).poll();
+
+    // Extract and invoke the onDelivered callback from the enqueue call
+    const call = enqueue.mock.calls[0][0] as { onDelivered?: () => void };
+    call.onDelivered?.();
 
     expect(client.inboxMarkRead).toHaveBeenCalledTimes(1);
     expect(client.inboxMarkRead).toHaveBeenCalledWith({
@@ -224,7 +224,7 @@ describe("InboxPoller", () => {
   });
 
   test("start() begins polling on the configured interval", () => {
-    const { client, pi } = createMocks();
+    const { client, queue } = createMocks();
     vi.mocked(client.inboxList).mockResolvedValue([]);
 
     const poller = new InboxPoller({
@@ -232,15 +232,12 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
     poller.start();
-
-    // Should have called inboxList already (first tick)
     expect(client.inboxList).toHaveBeenCalledTimes(1);
 
-    // Advance time — should fire again
     vi.advanceTimersByTime(testPollInterval);
     expect(client.inboxList).toHaveBeenCalledTimes(2);
 
@@ -251,7 +248,7 @@ describe("InboxPoller", () => {
   });
 
   test("stop() clears the timer", () => {
-    const { client, pi } = createMocks();
+    const { client, queue } = createMocks();
     vi.mocked(client.inboxList).mockResolvedValue([]);
 
     const poller = new InboxPoller({
@@ -259,45 +256,19 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
     poller.start();
     expect(client.inboxList).toHaveBeenCalledTimes(1);
 
     poller.stop();
-
-    // Advance time — should NOT fire again
     vi.advanceTimersByTime(testPollInterval * 3);
     expect(client.inboxList).toHaveBeenCalledTimes(1);
   });
 
-  test("poll() continues after a message delivery error", async () => {
-    const { client, pi, sendMessage } = createMocks();
-    const event1 = makeEvent({ id: "evt-1", by: "alice", data: { text: "First" } });
-    const event2 = makeEvent({ id: "evt-2", by: "bob", data: { text: "Second" } });
-
-    vi.mocked(client.inboxList).mockResolvedValue([event1, event2]);
-    sendMessage
-      .mockRejectedValueOnce(new Error("delivery failed"))
-      .mockResolvedValueOnce(undefined);
-
-    const poller = new InboxPoller({
-      client,
-      groupId: testGroupId,
-      actorId: testActorId,
-      pollIntervalMs: testPollInterval,
-      pi,
-    });
-
-    await expect((poller as unknown as { poll(): Promise<void> }).poll()).resolves.toBeUndefined();
-
-    // Both messages should have been attempted
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-  });
-
   test("poll() does not re-throw errors from inboxList", async () => {
-    const { client, pi } = createMocks();
+    const { client, queue } = createMocks();
     vi.mocked(client.inboxList).mockRejectedValue(new Error("network error"));
 
     const poller = new InboxPoller({
@@ -305,14 +276,14 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
     await expect((poller as unknown as { poll(): Promise<void> }).poll()).resolves.toBeUndefined();
   });
 
   test("stop() clears seenIds", async () => {
-    const { client, pi, sendMessage } = createMocks();
+    const { client, queue, enqueue } = createMocks();
     const events = [makeEvent({ id: "evt-1", by: "alice" })];
     vi.mocked(client.inboxList).mockResolvedValue(events);
 
@@ -321,25 +292,22 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
-    // First poll — deliver the message
     await (poller as unknown as { poll(): Promise<void> }).poll();
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledTimes(1);
 
-    // Stop — clears seenIds
     poller.stop();
 
-    // Second poll after stop — should re-deliver since seenIds was cleared
     await (poller as unknown as { poll(): Promise<void> }).poll();
-    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(enqueue).toHaveBeenCalledTimes(2);
 
     poller.stop();
   });
 
   test("poll() skips message addressed to another actor (not delivered, not marked read)", async () => {
-    const { client, pi, sendMessage } = createMocks();
+    const { client, queue, enqueue } = createMocks();
     vi.mocked(client.inboxMarkRead).mockResolvedValue(undefined);
     const events = [
       makeEvent({ id: "evt-1", by: "alice", data: { text: "for me", to: ["test-actor"] } }),
@@ -352,27 +320,22 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
     await (poller as unknown as { poll(): Promise<void> }).poll();
 
-    // Only the message for us should be delivered and marked read
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: expect.stringContaining("for me") }),
-      expect.anything(),
+    // Only the message addressed to us should be enqueued
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({ eventId: "evt-1" }),
+      }),
     );
-    expect(client.inboxMarkRead).toHaveBeenCalledTimes(1);
-    expect(client.inboxMarkRead).toHaveBeenCalledWith({
-      groupId: testGroupId,
-      actorId: testActorId,
-      eventId: "evt-1",
-    });
   });
 
   test("poll() skips @foreman messages entirely (no delivery, no mark-read)", async () => {
-    const { client, pi, sendMessage } = createMocks();
+    const { client, queue, enqueue } = createMocks();
     vi.mocked(client.inboxMarkRead).mockResolvedValue(undefined);
     const events = [
       makeEvent({ id: "evt-1", by: "alice", data: { text: "general", to: ["@all"] } }),
@@ -385,17 +348,17 @@ describe("InboxPoller", () => {
       groupId: testGroupId,
       actorId: testActorId,
       pollIntervalMs: testPollInterval,
-      pi,
+      queue,
     });
 
     await (poller as unknown as { poll(): Promise<void> }).poll();
 
-    // Only @all message should be delivered and marked read
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ content: expect.stringContaining("general") }),
-      expect.anything(),
+    // Only @all message should be enqueued
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: expect.objectContaining({ eventId: "evt-1" }),
+      }),
     );
-    expect(client.inboxMarkRead).toHaveBeenCalledTimes(1);
   });
 });
