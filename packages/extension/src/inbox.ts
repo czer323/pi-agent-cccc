@@ -1,4 +1,3 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CCCCBridgeClient } from "./client.ts";
 import type { CCCSEvent } from "./types.ts";
 import type { InboxQueue } from "./inbox-queue.ts";

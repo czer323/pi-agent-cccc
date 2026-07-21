@@ -230,7 +230,7 @@ describe("InboxQueue", () => {
   });
 
   test("onDelivered is called for each item after batch delivery", () => {
-    const { queue, sendMessage } = createQueue();
+    const { queue } = createQueue();
     const delivered1 = vi.fn();
     const delivered2 = vi.fn();
 
@@ -244,7 +244,7 @@ describe("InboxQueue", () => {
   });
 
   test("wake() schedules immediate flush (delay 0)", () => {
-    const { queue, sendMessage } = createQueue();
+    const { queue } = createQueue();
     const timerSpy = vi.spyOn(globalThis, "setTimeout");
 
     queue.enqueue(makeMsg());
@@ -280,18 +280,15 @@ describe("InboxQueue", () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  test("delivery error calls onError for each batch item", () => {
+  test("delivery error does not crash the queue", () => {
     const pi = { sendMessage: vi.fn(() => { throw new Error("delivery failed"); }) };
     const ctx = createMockCtx(true);
-    const onError1 = vi.fn();
-    const onError2 = vi.fn();
 
     const queue = new InboxQueue({ pi: pi as any, ctx });
     queue.enqueue(makeMsg({
       details: { eventId: "e1" },
       onDelivered: undefined,
     }));
-    // Note: the current design doesn't have onError. This test verifies no crash on delivery error.
 
     vi.advanceTimersByTime(201);
 

@@ -157,7 +157,7 @@ describe("InboxStreamer", () => {
   });
 
   test("falls back to polling after max retries", async () => {
-    const { client, eventsStream, queue, enqueue, onFallback } = createMocks();
+    const { client, eventsStream, queue, onFallback } = createMocks();
     eventsStream.mockReturnValue(mockGenerator([])); // Empty stream triggers immediate reconnect
 
     const streamer = new InboxStreamer({
@@ -196,7 +196,7 @@ describe("InboxStreamer", () => {
   });
 
   test("exposes seenIds for sharing with fallback poller", () => {
-    const { client, eventsStream, queue, onFallback } = createMocks();
+    const { client, queue, onFallback } = createMocks();
 
     const streamer = new InboxStreamer({
       client,
@@ -211,7 +211,7 @@ describe("InboxStreamer", () => {
   });
 
   test("caller can inject existing seenIds for dedup continuity", () => {
-    const { client, eventsStream, queue, onFallback } = createMocks();
+    const { client, queue, onFallback } = createMocks();
     const existingSeen = new Set<string>(["evt-1"]);
 
     const streamer = new InboxStreamer({

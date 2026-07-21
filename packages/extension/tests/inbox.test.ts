@@ -4,7 +4,6 @@ import { InboxPoller, formatMessage, shouldDeliver } from "../src/inbox.ts";
 import type { InboxQueue } from "../src/inbox-queue.ts";
 import type { CCCCBridgeClient } from "../src/client.ts";
 import type { CCCSEvent } from "../src/types.ts";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // ---- helpers ----
 

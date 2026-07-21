@@ -7,7 +7,6 @@
  * polling-based {@link InboxPoller} after exhausting retries.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CCCCBridgeClient } from "./client.ts";
 import type { EventStreamItem } from "./types.ts";
 import type { EventStreamEvent } from "cccc-sdk";
