@@ -58,9 +58,11 @@ vi.mock("../src/client.ts", () => ({
     };
   }),
   BridgeClientError: class BridgeClientError extends Error {
-    constructor(m: string) {
+    cause: unknown;
+    constructor(m: string, cause?: unknown) {
       super(m);
       this.name = "BridgeClientError";
+      if (cause instanceof Error) this.cause = cause;
     }
   },
   defaultBridgeConfig: vi.fn(() => ({ host: "localhost", port: 9765, timeoutMs: 30000 })),
@@ -440,8 +442,55 @@ test("onReconnect callback failure does not crash", async () => {
   const cb = (globalThis as any).__streamerOnReconnect;
   await expect(cb()).resolves.toBeUndefined();
 });
+test("onReconnect handles 'Name already exists' and reuses existing registration", async () => {
+  const pi = createMockPi();
+  mockLoadConfig.mockReturnValue({
+    groups: ["test-group"],
+    autoDiscover: false,
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    pollIntervalMs: 3000,
+    actorId: null,
+    defaultGroupId: null,
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
+  });
+  mockEnsureRegistered.mockResolvedValue("test-actor-01");
+  mod(pi);
 
-// ---------- shutdown tests ----------
+  await triggerSessionStart(pi);
+
+  // Capture call count from session_start setup
+  const sendCountBefore = mockSend.mock.calls.length;
+  const registerCountBefore = mockRegisterActor.mock.calls.length;
+
+  // Make registerActor reject with "Name already exists" conflict
+  const { BridgeClientError } = await import("../src/client.ts");
+  mockRegisterActor.mockRejectedValueOnce(
+    new BridgeClientError("registerActor failed", new Error("conflict: Name already exists")),
+  );
+
+  // Invoke the onReconnect callback
+  const cb = (globalThis as any).__streamerOnReconnect;
+  await cb();
+
+  // Should have attempted registration
+  expect(mockRegisterActor).toHaveBeenCalledTimes(registerCountBefore + 1);
+  expect(mockRegisterActor).toHaveBeenLastCalledWith({
+    groupId: "test-group",
+    actorId: "test-actor-01",
+    runtime: "custom",
+    runner: "headless",
+    title: "Pi Agent",
+  });
+
+  // Should still send online broadcast (treated as success — actor already there)
+  expect(mockSend).toHaveBeenCalledTimes(sendCountBefore + 1);
+  expect(mockSend).toHaveBeenLastCalledWith({
+    groupId: "test-group",
+    text: "Agent test-actor-01 online",
+  });
+});
 
 test("session_shutdown removes actor before disconnecting for single group", async () => {
   mockLoadConfig.mockReturnValue({

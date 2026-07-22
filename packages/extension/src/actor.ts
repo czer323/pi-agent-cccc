@@ -14,7 +14,7 @@ import os from "node:os";
 import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { BridgeConfig } from "./config.ts";
-import type { CCCCBridgeClient } from "./client.ts";
+import { BridgeClientError, type CCCCBridgeClient } from "./client.ts";
 
 /**
  * Derive the project name from git repo root (or cwd basename as fallback).
@@ -102,6 +102,18 @@ export function getActorId(config: BridgeConfig): string {
 }
 
 /**
+ * Check whether a BridgeClientError represents a "Name already exists" response
+ * from the daemon, which happens when an actor is still registered from a
+ * previous session.
+ */
+export function isNameAlreadyExistsError(err: unknown): boolean {
+  if (!(err instanceof BridgeClientError)) return false;
+  const { cause } = err;
+  const msg = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
+  return msg.includes("Name already exists") || msg.includes("actor_add_failed");
+}
+
+/**
  * Ensure an actor is registered with the CCCC daemon.
  *
  * Generates a unique per-session ID and registers it. Since IDs are unique,
@@ -117,13 +129,23 @@ export async function ensureRegistered(
 ): Promise<string> {
   const actorId = getActorId(config);
 
-  await client.registerActor({
-    groupId,
-    actorId,
-    runtime: "custom",
-    runner: "headless",
-    title: options?.title ?? "Pi Agent",
-  });
+  try {
+    await client.registerActor({
+      groupId,
+      actorId,
+      runtime: "custom",
+      runner: "headless",
+      title: options?.title ?? "Pi Agent",
+    });
+  } catch (err) {
+    // Actor may already be registered from a previous session that was not
+    // cleaned up (e.g. OMP crash, unclean shutdown).
+    if (isNameAlreadyExistsError(err)) {
+      console.log("[cccc-bridge] Actor already registered, reusing existing registration");
+      return actorId;
+    }
+    throw err;
+  }
 
   return actorId;
 }
