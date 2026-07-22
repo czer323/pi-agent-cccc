@@ -353,6 +353,169 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  /**
+   * Register slash commands so the user can interact with CCCC from the prompt.
+   * Runs inside session_start after connections are established.
+   */
+  function registerCommands(config: import("./config.ts").BridgeConfig) {
+    // ---- /cccc-status command ----
+    pi.registerCommand("cccc-status", {
+      description: "Show CCCC connection status: actor ID, groups, connection state",
+      handler: async (_args, _ctx) => {
+        if (connections.size === 0) {
+          _ctx.ui.notify("CCCC: Not connected", "warning");
+          return;
+        }
+        const firstConn = connections.values().next().value!;
+        const groupIds = Array.from(connections.keys());
+        _ctx.ui.notify(
+          `CCCC Status:\n  Actor: ${firstConn.actorId}\n  Groups: ${groupIds.join(", ")}\n  Title: ${config.agentTitle}\n  State: connected`,
+          "info",
+        );
+      },
+    });
+
+    // ---- /cccc-actors command ----
+    pi.registerCommand("cccc-actors", {
+      description: "List all actors in the current CCCC group",
+      handler: async (_args, _ctx) => {
+        if (connections.size === 0) {
+          _ctx.ui.notify("CCCC: Not connected", "warning");
+          return;
+        }
+        const groupId = connections.keys().next().value;
+        if (!groupId) {
+          _ctx.ui.notify("CCCC: No connected groups", "warning");
+          return;
+        }
+        const conn = connections.get(groupId)!;
+        try {
+          const detail = await conn.client.groupShow(groupId);
+          const actors = detail.actors ?? [];
+          if (actors.length === 0) {
+            _ctx.ui.notify("CCCC: No actors found in group", "info");
+            return;
+          }
+          const lines = actors.map(
+            (a: { id?: string; title?: string; running?: boolean }) =>
+              `${a.id} | ${a.title ?? "-"} | ${a.running ? "running" : "idle"}`,
+          );
+          _ctx.ui.notify(`CCCC Actors in ${groupId}:\n${lines.join("\n")}`, "info");
+        } catch (err) {
+          _ctx.ui.notify(
+            `CCCC: Failed to list actors: ${err instanceof Error ? err.message : String(err)}`,
+            "error",
+          );
+        }
+      },
+    });
+
+    // ---- /cccc-send command ----
+    pi.registerCommand("cccc-send", {
+      description: "Send a message to the CCCC group. Usage: /cccc-send <text>",
+      handler: async (args, _ctx) => {
+        const text = args.trim();
+        if (!text) {
+          _ctx.ui.notify("Usage: /cccc-send <message text>", "warning");
+          return;
+        }
+        if (connections.size === 0) {
+          _ctx.ui.notify("CCCC: Not connected", "warning");
+          return;
+        }
+        const groupId = connections.keys().next().value;
+        if (!groupId) {
+          _ctx.ui.notify("CCCC: No connected groups", "warning");
+          return;
+        }
+        const conn = connections.get(groupId)!;
+        try {
+          const result = await conn.client.send({ groupId, text });
+          _ctx.ui.notify(`CCCC: Message sent (event_id: ${result.event.id})`, "info");
+        } catch (err) {
+          _ctx.ui.notify(
+            `CCCC: Send failed: ${err instanceof Error ? err.message : String(err)}`,
+            "error",
+          );
+        }
+      },
+    });
+
+    // ---- /cccc-inbox command ----
+    pi.registerCommand("cccc-inbox", {
+      description: "Show unread CCCC inbox messages",
+      handler: async (_args, _ctx) => {
+        if (connections.size === 0) {
+          _ctx.ui.notify("CCCC: Not connected", "warning");
+          return;
+        }
+        const groupId = connections.keys().next().value;
+        if (!groupId) {
+          _ctx.ui.notify("CCCC: No connected groups", "warning");
+          return;
+        }
+        const conn = connections.get(groupId)!;
+        try {
+          const events = await conn.client.inboxList({
+            groupId,
+            actorId: conn.actorId,
+            limit: 10,
+          });
+          if (events.length === 0) {
+            _ctx.ui.notify("CCCC: No unread messages", "info");
+            return;
+          }
+          const lines = events.map(
+            (e: { id?: string; from?: string; content?: { text?: string } }) =>
+              `[${e.id}] ${e.from ?? "?"}: ${e.content?.text ?? "(no text)"}`,
+          );
+          _ctx.ui.notify(`CCCC Inbox (${events.length}):\n${lines.join("\n")}`, "info");
+        } catch (err) {
+          _ctx.ui.notify(
+            `CCCC: Inbox fetch failed: ${err instanceof Error ? err.message : String(err)}`,
+            "error",
+          );
+        }
+      },
+    });
+
+    // ---- /cccc-rename command ----
+    pi.registerCommand("cccc-rename", {
+      description: "Rename the agent's display title. Usage: /cccc-rename <new title>",
+      handler: async (args, _ctx) => {
+        const newTitle = args.trim();
+        if (!newTitle) {
+          _ctx.ui.notify("Usage: /cccc-rename <new title>", "warning");
+          return;
+        }
+        if (connections.size === 0) {
+          _ctx.ui.notify("CCCC: Not connected", "warning");
+          return;
+        }
+        const oldTitle = config.agentTitle;
+        config.agentTitle = newTitle;
+        for (const [groupId, conn] of connections) {
+          try {
+            await conn.client.registerActor({
+              groupId,
+              actorId: conn.actorId,
+              runtime: "custom",
+              runner: "headless",
+              title: newTitle,
+            });
+          } catch (err) {
+            _ctx.ui.notify(
+              `CCCC: Rename failed for group "${groupId}": ${err instanceof Error ? err.message : String(err)}`,
+              "error",
+            );
+            return;
+          }
+        }
+        _ctx.ui.notify(`CCCC: Agent renamed from "${oldTitle}" to "${newTitle}"`, "info");
+      },
+    });
+  }
+
   pi.on("session_start", async (_event, ctx) => {
     const config = loadConfig();
 
@@ -542,6 +705,7 @@ export default function (pi: ExtensionAPI) {
     // Register tools for both parent and sub-agent sessions when connected
     if (connections.size > 0) {
       registerTools(config);
+      registerCommands(config);
       console.log("[cccc-bridge] CCCC coordination skill available: skill://cccc-coordination");
     }
   });

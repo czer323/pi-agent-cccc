@@ -21,6 +21,7 @@ const {
   mockDiscoverGroups,
   mockActorRemove,
   mockGroupShow,
+  mockInboxList,
 } = vi.hoisted(() => ({
   mockLoadConfig: vi.fn(),
   mockConnect: vi.fn().mockResolvedValue(undefined),
@@ -36,6 +37,7 @@ const {
   mockRegisterActor: vi.fn().mockResolvedValue({ actorId: "child-actor-id" }),
   mockReply: vi.fn().mockResolvedValue({ event: { id: "reply-evt-1" }, ack_event: null }),
   mockSend: vi.fn().mockResolvedValue({ event: { id: "evt-1" }, ack_event: null }),
+  mockInboxList: vi.fn().mockResolvedValue([]),
 }));
 // ---------- module mocks ----------
 
@@ -55,6 +57,7 @@ vi.mock("../src/client.ts", () => ({
       send: mockSend,
       reply: mockReply,
       groupShow: mockGroupShow,
+      inboxList: mockInboxList,
     };
   }),
   BridgeClientError: class BridgeClientError extends Error {
@@ -137,6 +140,7 @@ function createMockPi() {
   const notify = vi.fn();
   const setStatus = vi.fn();
   const registeredTools: any[] = [];
+  const registeredCommands: any[] = [];
   const pi: Record<string, unknown> = {
     on: vi.fn((event: string, handler: Function) => {
       handlers.set(event, handler);
@@ -144,10 +148,14 @@ function createMockPi() {
     registerTool: vi.fn((tool: any) => {
       registeredTools.push(tool);
     }),
+    registerCommand: vi.fn((name: string, options: any) => {
+      registeredCommands.push({ name, ...options });
+    }),
     _handlers: handlers,
     _notify: notify,
     _setStatus: setStatus,
     _registeredTools: registeredTools,
+    _registeredCommands: registeredCommands,
   };
   return pi as any;
 }
@@ -1657,4 +1665,178 @@ test("session_start logs a hint that the coordination skill exists", async () =>
   } finally {
     logSpy.mockRestore();
   }
+});
+// ---------- slash command tests ----------
+
+function triggerCommand(pi: any, name: string, args = "") {
+  const cmd = pi._registeredCommands.find((c: any) => c.name === name);
+  if (!cmd) throw new Error(`Command "${name}" not registered`);
+  return cmd.handler(args, {
+    hasUI: true,
+    ui: {
+      notify: pi._notify,
+      setStatus: pi._setStatus,
+    },
+    waitForIdle: vi.fn(),
+  });
+}
+
+function setupSlashTest() {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+  mockInboxList.mockResolvedValue([]);
+  const pi = createMockPi();
+  mod(pi);
+  return pi;
+}
+
+test("registers all slash commands on session_start", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  expect(pi.registerCommand).toHaveBeenCalledTimes(5);
+  const cmdNames = pi._registeredCommands.map((c: any) => c.name);
+  expect(cmdNames).toContain("cccc-status");
+  expect(cmdNames).toContain("cccc-actors");
+  expect(cmdNames).toContain("cccc-send");
+  expect(cmdNames).toContain("cccc-inbox");
+  expect(cmdNames).toContain("cccc-rename");
+});
+
+test("cccc-status command returns actor ID and group info", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  await triggerCommand(pi, "cccc-status");
+
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("actor-123"), "info");
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("test-group"), "info");
+});
+
+test("cccc-actors command calls client.groupShow and returns actor list", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  mockGroupShow.mockResolvedValue({
+    group: { group_id: "test-group", title: "Test Group" },
+    actors: [
+      { id: "foreman-01", title: "Foreman", runtime: "python", runner: "anthropic" },
+      { id: "worker-02", title: "Worker", runtime: "python", runner: "openai" },
+    ],
+  });
+
+  await triggerCommand(pi, "cccc-actors");
+
+  expect(mockGroupShow).toHaveBeenCalledWith("test-group");
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("foreman-01"), "info");
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("worker-02"), "info");
+});
+
+test("cccc-send command calls client.send with provided text", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  await triggerCommand(pi, "cccc-send", "hello world");
+
+  expect(mockSend).toHaveBeenCalledWith({
+    groupId: "test-group",
+    text: "hello world",
+    to: undefined,
+  });
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("Message sent"), "info");
+});
+
+test("cccc-send command warns on empty text", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  // Reset mockSend to clear the online broadcast call
+  mockSend.mockClear();
+
+  await triggerCommand(pi, "cccc-send", "");
+
+  expect(mockSend).not.toHaveBeenCalled();
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("Usage"), "warning");
+});
+
+test("cccc-inbox command calls client.inboxList and shows messages", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  mockInboxList.mockResolvedValue([
+    {
+      id: "evt-1",
+      from: "other-actor",
+      content: { type: "text", text: "Hello from peer" },
+      created_at: "2026-07-22T10:00:00Z",
+    },
+  ]);
+
+  await triggerCommand(pi, "cccc-inbox");
+
+  expect(mockInboxList).toHaveBeenCalledWith({
+    groupId: "test-group",
+    actorId: "actor-123",
+    limit: 10,
+  });
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("other-actor"), "info");
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("Hello from peer"), "info");
+});
+
+test("cccc-inbox command shows empty state when no messages", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  mockInboxList.mockResolvedValue([]);
+
+  await triggerCommand(pi, "cccc-inbox");
+
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("No unread messages"), "info");
+});
+
+test("cccc-rename command calls registerActor with updated title", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  await triggerCommand(pi, "cccc-rename", "New Title");
+
+  expect(mockRegisterActor).toHaveBeenCalledWith(
+    expect.objectContaining({
+      groupId: "test-group",
+      title: "New Title",
+    }),
+  );
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("New Title"), "info");
+});
+
+test("cccc-rename command warns on empty title", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  await triggerCommand(pi, "cccc-rename", "");
+
+  expect(mockRegisterActor).not.toHaveBeenCalled();
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("Usage"), "warning");
+});
+
+test("slash commands are not registered when no groups connected", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(pi.registerCommand).not.toHaveBeenCalled();
 });
