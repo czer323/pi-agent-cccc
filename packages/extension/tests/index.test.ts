@@ -63,9 +63,13 @@ vi.mock("../src/client.ts", () => ({
   defaultBridgeConfig: vi.fn(() => ({ host: "localhost", port: 9765, timeoutMs: 30000 })),
 }));
 
-vi.mock("../src/actor.ts", () => ({
-  ensureRegistered: mockEnsureRegistered,
-}));
+vi.mock("../src/actor.ts", async (importOriginal) => {
+  const actual = (await importOriginal()) as typeof import("../src/actor.ts");
+  return {
+    ...actual,
+    ensureRegistered: mockEnsureRegistered,
+  };
+});
 
 vi.mock("../src/inbox.ts", () => ({
   // Must use a regular function (not arrow) so it works with `new InboxPoller()`

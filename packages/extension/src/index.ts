@@ -7,7 +7,7 @@ import { Type } from "@sinclair/typebox";
 import { loadConfig } from "./config.ts";
 import { defaultBridgeConfig, BridgeClientError } from "./types.ts";
 import { CCCCBridgeClient } from "./client.ts";
-import { ensureRegistered } from "./actor.ts";
+import { ensureRegistered, buildActorId, MAX_ACTOR_ID_LENGTH } from "./actor.ts";
 import { discoverGroups } from "./discovery.ts";
 import { InboxPoller } from "./inbox.ts";
 import { InboxStreamer } from "./streamer.ts";
@@ -37,10 +37,26 @@ function isSubAgentSession(groups: string[]): string | null {
 
 /**
  * Derive a child actor ID from the parent actor ID.
+ *
+ * Strips the parent's random suffix and appends `-child-<hash>`.
+ * The project name is truncated if the total would exceed
+ * the 32-character CCCC daemon limit.
  */
 function deriveChildActorId(parentActorId: string): string {
-  const shortHash = randomUUID().split("-")[0];
-  return `${parentActorId}-child-${shortHash}`;
+  const shortHash = randomUUID().split("-")[0].substring(0, 6);
+  // Strip parent's random6 suffix (e.g. "-abc123") to reclaim space
+  const parentBase = parentActorId.replace(/-[a-z0-9]{6}$/, "");
+  const suffix = `child-${shortHash}`;
+  const full = `${parentBase}-${suffix}`;
+  if (full.length <= MAX_ACTOR_ID_LENGTH) return full;
+
+  // Extract components from parent base and truncate the project
+  const parts = parentBase.split("-");
+  if (parts.length < 3) return full.slice(0, MAX_ACTOR_ID_LENGTH);
+
+  const [role, machine, ...projectParts] = parts;
+  const project = projectParts.join("-");
+  return buildActorId(role, machine, project, suffix);
 }
 
 export default function (pi: ExtensionAPI) {
