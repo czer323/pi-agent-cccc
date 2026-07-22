@@ -41,21 +41,21 @@ describe("formatMessage", () => {
   test("produces correct output with text", () => {
     const event = makeEvent({ id: "evt-1", by: "alice", data: { text: "Hello world" } });
     expect(formatMessage(event)).toBe(
-      "New CCCC message from alice:\n\nHello world\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
+      "New CCCC message from alice:\n\nHello world\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
     );
   });
 
   test("handles missing text with fallback", () => {
     const event = makeEvent({ id: "evt-2", by: "bob", data: {} });
     expect(formatMessage(event)).toBe(
-      "New CCCC message from bob:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
+      "New CCCC message from bob:\n\n(no text)\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
     );
   });
 
   test("handles null text with fallback", () => {
     const event = makeEvent({ id: "evt-3", by: "carol", data: { text: null } });
     expect(formatMessage(event)).toBe(
-      "New CCCC message from carol:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
+      "New CCCC message from carol:\n\n(no text)\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
     );
   });
 
@@ -66,6 +66,15 @@ describe("formatMessage", () => {
     // The only "wait" that may appear is in the user's message text, not in the format scaffolding
     const scaffolding = result.split("\n\n---\n")[1] ?? "";
     expect(scaffolding).not.toMatch(/\bwait\b/i);
+  });
+
+  test("includes clear instruction to use cccc_reply/cccc_send and avoid in-session reply", () => {
+    const event = makeEvent({ id: "evt-5", by: "alice", data: { text: "Hello" } });
+    const output = formatMessage(event);
+    expect(output).toContain("cccc_reply");
+    expect(output).toContain("cccc_send");
+    expect(output).toContain("Do NOT reply");
+    expect(output).toContain("in-session");
   });
 });
 
@@ -174,7 +183,7 @@ describe("InboxPoller", () => {
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         content:
-          "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
+          "New CCCC message from alice:\n\nHello\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
         details: {
           actorId: testActorId,
           groupId: testGroupId,
