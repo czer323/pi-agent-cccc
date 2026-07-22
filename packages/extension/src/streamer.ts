@@ -141,7 +141,7 @@ export class InboxStreamer {
     });
 
     this.seenIds.add(event.id);
-}
+  }
 
   private _delay(ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {

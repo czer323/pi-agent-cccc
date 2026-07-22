@@ -33,6 +33,8 @@ CCCC_DAEMON_HOST="192.168.7.163"
 EXTENSION_PATH="${HOME}/.pi/agent/extensions/cccc-bridge"
 TIMESTAMP="$(date +%s)"
 UNIQUE_TAG="E2E${TIMESTAMP}"
+# Dedicated workspace for the test agent — avoids closing the caller's tab
+TEST_WORKSPACE=""
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -61,18 +63,18 @@ summary() {
     return 1
   fi
 }
-
-# ---- Cleanup Trap -----------------------------------------------------------
 cleanup() {
   local exit_code=$?
   echo ""
   echo "--- Cleanup: stopping agent ---"
-  # Stop the herdr agent if it is still running
-  herdr agent stop "${AGENT_NAME}" 2>/dev/null || true
+  # Close the dedicated workspace (kills the agent process inside it)
+  if [ -n "${TEST_WORKSPACE}" ]; then
+    herdr workspace close "${TEST_WORKSPACE}" 2>/dev/null || true
+  fi
   # Brief pause to let daemon process the removal
   sleep 1
   # Verify actor removed — this is informational, not a test gate
-  if cccc group show "${CCCC_GROUP}" 2>/dev/null | grep -q "${AGENT_NAME}"; then
+  if cccc status 2>/dev/null | grep -q "${AGENT_NAME}"; then
     echo "  [warn] Actor '${AGENT_NAME}' still visible after stop; may need manual cleanup"
   else
     echo "  Actor '${AGENT_NAME}' removed from group"
@@ -97,17 +99,22 @@ test_setup() {
   # Ensure working directory exists
   mkdir -p "${AGENT_CWD}"
 
-  # Start the pi-agent session via herdr
-  # Flags: -n e (name shortcut) + -e (extension path)
-  # The -- separator passes everything after to the pi command
-  echo "  Command: herdr agent start ${AGENT_NAME} --cwd ${AGENT_CWD} \\"
-  echo "             --env CCCC_GROUP_ID=${CCCC_GROUP} \\"
-  echo "             --env CCCC_DAEMON_HOST=${CCCC_DAEMON_HOST} \\"
-  echo "             -- pi -ne -e ${EXTENSION_PATH}"
-  echo ""
+  # Create a dedicated workspace so cleanup doesn't close the caller's tab
+  local ws_output
+  ws_output="$(herdr workspace create --cwd "${AGENT_CWD}" --label "e2e-test-ws" 2>&1)"
+  TEST_WORKSPACE="$(echo "${ws_output}" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['workspace']['workspace_id'])" 2>/dev/null || echo "")"
+  if [ -z "${TEST_WORKSPACE}" ]; then
+    echo "  [warn] Could not create dedicated workspace; falling back to current workspace"
+    # Try to extract workspace from the error (name_taken means it already exists)
+    TEST_WORKSPACE="$(echo "${ws_output}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',{}).get('candidates',[''])[0].split()[0].split('=')[1] if 'candidates' in d.get('error',{}) else '')" 2>/dev/null || echo "")"
+  fi
+  echo "  Workspace: ${TEST_WORKSPACE}"
+
+  echo "  Starting pi-agent in workspace ${TEST_WORKSPACE}..."
 
   herdr agent start "${AGENT_NAME}" \
     --cwd "${AGENT_CWD}" \
+    --workspace "${TEST_WORKSPACE}" \
     --env "CCCC_GROUP_ID=${CCCC_GROUP}" \
     --env "CCCC_DAEMON_HOST=${CCCC_DAEMON_HOST}" \
     -- \
@@ -152,42 +159,21 @@ test_actor_registration() {
   echo "============================================"
 
   # Check that the e2e-test actor appears in the CCCC group roster.
-  # The actor won't literally be named "e2e-test" — pi assigns a dynamic
-  # actor ID — but the agent's output should contain the actor ID, and
-  # there should be at least one actor in the group (our session).
-  local group_output
-  group_output="$(cccc group show "${CCCC_GROUP}" 2>/dev/null || true)"
+  # Use `cccc status` instead of `cccc group show` (which has a known bug
+  # returning group_not_found even when the group exists).
+  local status_output
+  status_output="$(cccc status 2>/dev/null || true)"
 
-  if echo "${group_output}" | grep -q 'actors'; then
-    pass "Group show returned actor list"
+  if echo "${status_output}" | grep -q "${AGENT_NAME}"; then
+    pass "Actor '${AGENT_NAME}' found in CCCC status roster"
   else
-    fail "No actors found in group show output"
-    echo "  Group show output:"
-    echo "${group_output}"
+    fail "Actor '${AGENT_NAME}' not found in CCCC status"
+    echo "  CCCC status output:"
+    echo "${status_output}"
     return 1
   fi
-
-  # Extract the dynamic actor ID from the agent's output
-  local agent_output
-  agent_output="$(herdr agent read "${AGENT_NAME}" --lines 50 2>/dev/null || true)"
-  local actor_id
-  actor_id="$(echo "${agent_output}" | sed -n 's/.*"\([a-z0-9]\{8,\}\)".*/\1/p' | head -1)"
-
-  if [ -n "${actor_id}" ] && echo "${group_output}" | grep -q "${actor_id}"; then
-    pass "Actor ID '${actor_id}' found in group roster"
-  else
-    # The actor ID format from ensureRegistered may differ; just check
-    # the group has the right number of actors (at least 1 running)
-    local actor_count
-    actor_count="$(echo "${group_output}" | grep -c 'running' || true)"
-    if [ "${actor_count}" -ge 1 ]; then
-      pass "Group roster contains running actors (${actor_count})"
-    else
-      fail "Could not verify actor registration"
-      echo "  Group show: ${group_output}"
-    fi
-  fi
 }
+
 
 test_message_delivery() {
   echo ""
@@ -199,7 +185,7 @@ test_message_delivery() {
 
   # Send a message via CCCC CLI
   echo "  Sending: ${test_msg}"
-  cccc send --group "${CCCC_GROUP}" --text "${test_msg}"
+  cccc send --group "${CCCC_GROUP}" "${test_msg}"
 
   # Wait for agent to process (it goes idle after handling the message)
   herdr agent wait "${AGENT_NAME}" --status idle --timeout 30000 || true
@@ -244,7 +230,7 @@ test_agent_reply() {
   # Check the CCCC daemon tail for the reply
   sleep 2
   local daemon_tail
-  daemon_tail="$(cccc tail --group "${CCCC_GROUP}" --limit 10 2>/dev/null || true)"
+  daemon_tail="$(cccc tail --group "${CCCC_GROUP}" -n 10 2>/dev/null || true)"
 
   if echo "${daemon_tail}" | grep -q "${reply_marker}"; then
     pass "Agent reply '${reply_marker}' received by CCCC group"

@@ -36,7 +36,7 @@ const TEST_MESSAGE_TEXT = `Integration test message ${testRunId}`;
 
 /** Run `cccc send` via CLI. Returns stdout on success or throws on failure. */
 function cliSend(groupId: string, text: string): string {
-  return execSync(`cccc send --group "${groupId}" --text "${text.replace(/"/g, '\\"')}"`, {
+  return execSync(`cccc send --group "${groupId}" "${text.replace(/"/g, '\\"')}"`, {
     encoding: "utf-8",
     timeout: 10_000,
   });
