@@ -68,7 +68,7 @@ describe("InboxStreamer", () => {
 
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: expect.stringContaining("New CCCC message from alice"),
+        content: expect.stringContaining("**From:** alice"),
         details: expect.objectContaining({
           groupId: testGroupId,
           eventId: "evt-1",
