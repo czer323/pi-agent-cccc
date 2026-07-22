@@ -251,6 +251,37 @@ describe("shouldDeliver", () => {
       ),
     ).toBe(true);
   });
+
+  test("skips when event is from our own actorId (own lifecycle broadcast)", () => {
+    expect(
+      shouldDeliver(
+        makeEvent({ id: "e12", by: "my-actor", data: { text: "Agent my-actor online" } }),
+        actorId,
+      ),
+    ).toBe(false);
+  });
+
+  test("delivers when event is from a different actorId", () => {
+    expect(
+      shouldDeliver(makeEvent({ id: "e13", by: "other-actor", data: { text: "Hello" } }), actorId),
+    ).toBe(true);
+  });
+
+  test("skips when event has no text content (system message)", () => {
+    expect(shouldDeliver(makeEvent({ id: "e14", data: {} }), actorId)).toBe(false);
+  });
+
+  test("skips when event has null text content", () => {
+    expect(
+      shouldDeliver(makeEvent({ id: "e15", data: { text: null, to: ["@all"] } }), actorId),
+    ).toBe(false);
+  });
+
+  test("skips when event has empty string text content", () => {
+    expect(
+      shouldDeliver(makeEvent({ id: "e16", data: { text: "", to: ["my-actor"] } }), actorId),
+    ).toBe(false);
+  });
 });
 
 // ---- InboxPoller ----

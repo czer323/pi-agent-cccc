@@ -466,8 +466,8 @@ export default function (pi: ExtensionAPI) {
             return;
           }
           const lines = events.map(
-            (e: { id?: string; from?: string; content?: { text?: string } }) =>
-              `[${e.id}] ${e.from ?? "?"}: ${e.content?.text ?? "(no text)"}`,
+            (e: { id: string; by?: string; data?: { text?: string } }) =>
+              `[${e.id}] ${e.by ?? "?"}: ${e.data?.text ?? "(no text)"}`,
           );
           _ctx.ui.notify(`CCCC Inbox (${events.length}):\n${lines.join("\n")}`, "info");
         } catch (err) {
