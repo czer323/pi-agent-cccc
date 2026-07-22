@@ -12,7 +12,6 @@
 #   - pi (pi-coding-agent) installed and on PATH
 #   - CCCC bridge extension symlinked at ~/.pi/agent/extensions/cccc-bridge
 #   - CCCC daemon running at 192.168.7.163:9765
-#   - cccc CLI on PATH
 #   - Target group g_c8878957bd2c exists on the daemon
 #
 # Usage:
@@ -63,6 +62,36 @@ summary() {
     return 1
   fi
 }
+
+# Call the CCCC daemon over TCP with an NDJSON request.
+# Usage: daemon_call <op> <json-args>
+# Example: daemon_call actor_list '{"group_id": "g_..."}'
+# Prints the JSON response to stdout.
+daemon_call() {
+  local op="$1"
+  shift
+  local args="$1"
+  python3 -c "
+import socket, json, sys
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(10)
+s.connect(('${CCCC_DAEMON_HOST}', 9765))
+req = json.dumps({'v': 1, 'op': '${op}', 'args': ${args}}) + '\n'
+s.sendall(req.encode())
+data = b''
+while True:
+    try:
+        chunk = s.recv(4096)
+        if not chunk: break
+        data += chunk
+        if b'\n' in data: break
+    except socket.timeout:
+        break
+s.close()
+result = json.loads(data.decode().strip())
+print(json.dumps(result))
+" 2>/dev/null
+}
 cleanup() {
   local exit_code=$?
   echo ""
@@ -74,7 +103,7 @@ cleanup() {
   # Brief pause to let daemon process the removal
   sleep 1
   # Verify actor removed — this is informational, not a test gate
-  if cccc status 2>/dev/null | grep -q "${AGENT_NAME}"; then
+  if daemon_call actor_list '{"group_id": "'${CCCC_GROUP}'"}' | grep -q "${AGENT_NAME}"; then
     echo "  [warn] Actor '${AGENT_NAME}' still visible after stop; may need manual cleanup"
   else
     echo "  Actor '${AGENT_NAME}' removed from group"
@@ -159,17 +188,17 @@ test_actor_registration() {
   echo "============================================"
 
   # Check that the e2e-test actor appears in the CCCC group roster.
-  # Use `cccc status` instead of `cccc group show` (which has a known bug
-  # returning group_not_found even when the group exists).
-  local status_output
-  status_output="$(cccc status 2>/dev/null || true)"
+  # Query the daemon directly via TCP (cccc CLI fails with group_not_found
+  # when the daemon is remote).
+  local actor_output
+  actor_output="$(daemon_call actor_list '{"group_id": "'${CCCC_GROUP}'"}' 2>/dev/null || true)"
 
-  if echo "${status_output}" | grep -q "${AGENT_NAME}"; then
-    pass "Actor '${AGENT_NAME}' found in CCCC status roster"
+  if echo "${actor_output}" | grep -q "${AGENT_NAME}"; then
+    pass "Actor '${AGENT_NAME}' found in CCCC group roster"
   else
-    fail "Actor '${AGENT_NAME}' not found in CCCC status"
-    echo "  CCCC status output:"
-    echo "${status_output}"
+    fail "Actor '${AGENT_NAME}' not found in CCCC group roster"
+    echo "  Daemon response:"
+    echo "${actor_output}" | python3 -m json.tool 2>/dev/null || echo "${actor_output}"
     return 1
   fi
 }
@@ -178,14 +207,14 @@ test_actor_registration() {
 test_message_delivery() {
   echo ""
   echo "============================================"
-  echo "  Test 2: Message delivery (CLI → Agent)"
+  echo "  Test 2: Message delivery (Daemon → Agent)"
   echo "============================================"
 
-  local test_msg="E2E test: can you hear me? (${UNIQUE_TAG})"
+  local test_msg="E2E test: can you hear me? ${UNIQUE_TAG}"
 
-  # Send a message via CCCC CLI
+  # Send a message via daemon TCP API
   echo "  Sending: ${test_msg}"
-  cccc send --group "${CCCC_GROUP}" "${test_msg}"
+  daemon_call send '{"group_id": "'${CCCC_GROUP}'", "by": "e2e-test", "text": "'"${test_msg}"'", "to": ["@all"]}' >/dev/null 2>&1 || true
 
   # Wait for agent to process (it goes idle after handling the message)
   herdr agent wait "${AGENT_NAME}" --status idle --timeout 30000 || true
@@ -195,15 +224,15 @@ test_message_delivery() {
   agent_output="$(herdr agent read "${AGENT_NAME}" --lines 20 2>/dev/null || true)"
 
   if echo "${agent_output}" | grep -q "${UNIQUE_TAG}"; then
-    pass "Agent received CLI-sent message"
+    pass "Agent received daemon-sent message"
   else
     # The agent may not have line-buffered the full input yet.
     # Try reading more lines.
     agent_output="$(herdr agent read "${AGENT_NAME}" --lines 100 2>/dev/null || true)"
     if echo "${agent_output}" | grep -q "${UNIQUE_TAG}"; then
-      pass "Agent received CLI-sent message (after extended read)"
+      pass "Agent received daemon-sent message (after extended read)"
     else
-      fail "Agent did not receive CLI-sent message"
+      fail "Agent did not receive daemon-sent message"
       echo "  Agent output:"
       echo "${agent_output}" | tail -30
       return 1
@@ -227,17 +256,17 @@ test_agent_reply() {
   # Wait for the agent to finish processing the prompt
   herdr agent wait "${AGENT_NAME}" --status idle --timeout 60000 || true
 
-  # Check the CCCC daemon tail for the reply
+  # Check the CCCC daemon ledger for the reply via TCP API
   sleep 2
-  local daemon_tail
-  daemon_tail="$(cccc tail --group "${CCCC_GROUP}" -n 10 2>/dev/null || true)"
+  local daemon_ledger
+  daemon_ledger="$(daemon_call ledger_tail '{"group_id": "'${CCCC_GROUP}'", "limit": 10}' 2>/dev/null || true)"
 
-  if echo "${daemon_tail}" | grep -q "${reply_marker}"; then
+  if echo "${daemon_ledger}" | grep -q "${reply_marker}"; then
     pass "Agent reply '${reply_marker}' received by CCCC group"
   else
-    fail "Agent reply not found in CCCC group tail"
-    echo "  CCCC tail output:"
-    echo "${daemon_tail}"
+    fail "Agent reply not found in CCCC group ledger"
+    echo "  Daemon ledger response:"
+    echo "${daemon_ledger}" | python3 -m json.tool 2>/dev/null || echo "${daemon_ledger}"
     echo ""
     echo "  Agent output after send:"
     herdr agent read "${AGENT_NAME}" --lines 50 2>/dev/null || true
