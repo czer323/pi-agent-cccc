@@ -48,7 +48,12 @@ export function formatMessage(event: CCCSEvent): string {
 
   const header = headerLines.join("\n");
 
-  return `---\n${header}\n\n${text}\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the \`cccc_reply\` tool to reply to this specific message.\nUse the \`cccc_send\` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.`;
+  // System messages (empty fallback text) get no reply instructions
+  if (text === "(no text)") {
+    return `---\n${header}\n\n${text}`;
+  }
+
+  return `---\n${header}\n\n${text}\n\n---\nReply via cccc_reply or cccc_send.`;
 }
 
 /**

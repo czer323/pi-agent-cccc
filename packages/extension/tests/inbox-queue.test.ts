@@ -153,13 +153,13 @@ describe("InboxQueue", () => {
     // First batch should have exactly 20 messages
     expect(sendMessage).toHaveBeenCalledTimes(1);
     const call = sendMessage.mock.calls[0][0];
-    expect(call.content).toContain("[CCCC: 20 message(s) received]");
+    expect(call.content).toContain("[CCCC: 20 messages received]");
 
     // Should have 5 remaining
     vi.advanceTimersByTime(500);
     expect(sendMessage).toHaveBeenCalledTimes(2);
     const call2 = sendMessage.mock.calls[1][0];
-    expect(call2.content).toContain("[CCCC: 5 message(s) received]");
+    expect(call2.content).toContain("[CCCC: 5 messages received]");
   });
 
   test("batch: respects char cap (~16K chars)", () => {
@@ -181,7 +181,7 @@ describe("InboxQueue", () => {
     // First batch should have ~3 messages (< 16K), next batch the rest
     expect(sendMessage).toHaveBeenCalledTimes(1);
     const content = sendMessage.mock.calls[0][0].content;
-    expect(content).toMatch(/\[CCCC: [23] message\(s\) received\]/);
+    expect(content).toMatch(/\[CCCC: [23] messages received\]/);
 
     // Eventually all delivered
     vi.advanceTimersByTime(2000);
@@ -205,8 +205,7 @@ describe("InboxQueue", () => {
     expect(call.content).toBe("New CCCC message from alice:\n\nHello\n\n---\nReply to this...");
     expect(call.details).not.toHaveProperty("batched");
   });
-
-  test("multiple messages use batch header", () => {
+  test("multiple messages use batch header with numbered entries", () => {
     const { queue, sendMessage } = createQueue();
 
     queue.enqueue(
@@ -226,9 +225,9 @@ describe("InboxQueue", () => {
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
     const call = sendMessage.mock.calls[0][0];
-    expect(call.content).toContain("[CCCC: 2 message(s) received]");
-    expect(call.content).toContain("msg1");
-    expect(call.content).toContain("msg2");
+    expect(call.content).toContain("[CCCC: 2 messages received]");
+    expect(call.content).toContain("1. msg1");
+    expect(call.content).toContain("2. msg2");
     expect(call.details).toEqual({
       batched: true,
       count: 2,
@@ -331,10 +330,10 @@ describe("InboxQueue", () => {
     // All 3 delivered in one batch
     expect(sendMessage).toHaveBeenCalledTimes(1);
     const call = sendMessage.mock.calls[0];
-    expect(call[0].content).toContain("[CCCC: 3 message(s) received]");
-    expect(call[0].content).toContain("first");
-    expect(call[0].content).toContain("second");
-    expect(call[0].content).toContain("third");
+    expect(call[0].content).toContain("[CCCC: 3 messages received]");
+    expect(call[0].content).toContain("1. first");
+    expect(call[0].content).toContain("2. second");
+    expect(call[0].content).toContain("3. third");
   });
 
   test("flush on agent_end via wake() works when busy then idle", () => {

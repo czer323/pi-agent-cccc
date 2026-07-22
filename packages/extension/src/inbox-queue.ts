@@ -126,7 +126,8 @@ export class InboxQueue {
       content = batch[0].content;
       details = { ...batch[0].details };
     } else {
-      content = `[CCCC: ${batch.length} message(s) received]\n\n${batch.map((i) => i.content).join("\n\n")}`;
+      const numbered = batch.map((i, idx) => `${idx + 1}. ${i.content}`).join("\n\n");
+      content = `[CCCC: ${batch.length} messages received]\n\n${numbered}`;
       details = {
         batched: true,
         count: batch.length,

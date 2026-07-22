@@ -500,6 +500,33 @@ test("onReconnect handles 'Name already exists' and reuses existing registration
   });
 });
 
+test("onReconnect notifies user via ctx.ui when hasUI is true", async () => {
+  const pi = createMockPi();
+  mockLoadConfig.mockReturnValue({
+    groups: ["test-group"],
+    autoDiscover: false,
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    pollIntervalMs: 3000,
+    actorId: null,
+    defaultGroupId: null,
+    agentTitle: "Pi Agent",
+  });
+  mockEnsureRegistered.mockResolvedValue("test-actor-01");
+  mod(pi);
+
+  await triggerSessionStart(pi, true);
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("CCCC bridge connected"), "info");
+
+  // Invoke the onReconnect callback
+  const cb = (globalThis as any).__streamerOnReconnect;
+  pi._notify.mockClear();
+  await cb();
+
+  // Should show reconnect notification
+  expect(pi._notify).toHaveBeenCalledWith("[cccc-bridge] Reconnected to daemon", "info");
+});
+
 test("session_shutdown removes actor before disconnecting for single group", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
@@ -616,6 +643,29 @@ test("broadcast failure on session_shutdown does not block shutdown", async () =
   expect(mockActorRemove).toHaveBeenCalledWith("test-group", "actor-123");
   expect(mockDisconnect).toHaveBeenCalledTimes(1);
   expect(mockStreamerStop).toHaveBeenCalledTimes(1);
+});
+
+test("session_shutdown clears cccc status when hasUI is true", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+
+  await triggerSessionStart(pi, true);
+  expect(pi._setStatus).toHaveBeenCalledWith("cccc", "connected");
+  pi._setStatus.mockClear();
+
+  await triggerSessionShutdown(pi);
+
+  // Should clear the status on shutdown
+  expect(pi._setStatus).toHaveBeenCalledWith("cccc", "disconnected");
 });
 
 // ---------- UI tests ----------
