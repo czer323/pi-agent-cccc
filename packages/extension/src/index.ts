@@ -489,20 +489,13 @@ export default function (pi: ExtensionAPI) {
           groupId,
           text: `Agent ${conn.actorId} going offline`,
         });
-      } catch (err) {
-        console.error(
-          `[cccc-bridge] Failed to broadcast offline status for "${conn.actorId}":`,
-          err,
-        );
+      } catch {
+        // Daemon may be down — silent on shutdown
       }
       try {
         await conn.client.actorRemove(groupId, conn.actorId);
-        console.log(`[cccc-bridge] Removed actor "${conn.actorId}" from group "${groupId}"`);
-      } catch (err) {
-        console.error(
-          `[cccc-bridge] Failed to remove actor "${conn.actorId}" from group "${groupId}":`,
-          err,
-        );
+      } catch {
+        // Daemon may be down — silent on shutdown
       }
       conn.client.disconnect();
       console.log(`[cccc-bridge] Disconnected group "${groupId}"`);
