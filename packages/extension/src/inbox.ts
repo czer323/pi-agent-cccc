@@ -56,15 +56,21 @@ export function formatMessage(event: CCCSEvent): string {
  * the CCCC `to` field.
  *
  * Rules (checked in order; first match wins):
- * 1. `to` absent or empty → deliver (broadcast)
- * 2. `to` contains this actorId → deliver (direct message)
- * 3. `to` contains "@all" → deliver (broadcast)
- * 4. `to` contains "@peers" → deliver (this actor is a peer)
- * 5. `to` contains "@foreman" → skip (this actor is not foreman)
- * 6. `to` contains "@user" → skip (this is for the human user)
- * 7. Otherwise → skip (message is for another actor)
+ * 1. Own lifecycle broadcasts → skip (by === actorId)
+ * 2. No text content → skip (system event without message)
+ * 3. `to` absent or empty → deliver (broadcast)
+ * 4. `to` contains this actorId → deliver (direct message)
+ * 5. `to` contains "@all" → deliver (broadcast)
+ * 6. `to` contains "@peers" → deliver (this actor is a peer)
+ * 7. `to` contains "@foreman" → skip (this actor is not foreman)
+ * 8. `to` contains "@user" → skip (this is for the human user)
+ * 9. Otherwise → skip (message is for another actor)
  */
 export function shouldDeliver(event: CCCSEvent, actorId: string): boolean {
+  // Filter own lifecycle broadcasts (Agent <id> online/offline)
+  if (event.by === actorId) return false;
+  // Filter system events with no text content
+  if (!event.data?.text) return false;
   const to: string[] | undefined = event.data?.to as string[] | undefined;
   if (!to || to.length === 0) return true;
   if (to.includes(actorId)) return true;

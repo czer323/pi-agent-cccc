@@ -1768,13 +1768,11 @@ test("cccc-send command warns on empty text", async () => {
 test("cccc-inbox command calls client.inboxList and shows messages", async () => {
   const pi = setupSlashTest();
   await triggerSessionStart(pi);
-
   mockInboxList.mockResolvedValue([
     {
       id: "evt-1",
-      from: "other-actor",
-      content: { type: "text", text: "Hello from peer" },
-      created_at: "2026-07-22T10:00:00Z",
+      by: "other-actor",
+      data: { text: "Hello from peer" },
     },
   ]);
 
