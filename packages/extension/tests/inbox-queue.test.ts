@@ -309,6 +309,34 @@ describe("InboxQueue", () => {
     expect(pi.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  test("buffers messages during active agent turns, delivers when idle", () => {
+    const ctx = createMockCtx(false); // Busy
+    const { queue, sendMessage } = createQueue({ ctx });
+
+    // Enqueue 3 messages while agent is busy
+    queue.enqueue(makeMsg({ content: "first" }));
+    queue.enqueue(makeMsg({ content: "second" }));
+    queue.enqueue(makeMsg({ content: "third" }));
+
+    // Past debounce
+    vi.advanceTimersByTime(201);
+
+    // None delivered while busy
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    // Agent becomes idle
+    ctx.isIdle.mockReturnValue(true);
+    vi.advanceTimersByTime(500); // Retry interval
+
+    // All 3 delivered in one batch
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    const call = sendMessage.mock.calls[0];
+    expect(call[0].content).toContain("[CCCC: 3 message(s) received]");
+    expect(call[0].content).toContain("first");
+    expect(call[0].content).toContain("second");
+    expect(call[0].content).toContain("third");
+  });
+
   test("flush on agent_end via wake() works when busy then idle", () => {
     const ctx = createMockCtx(false); // busy
     const { queue, sendMessage } = createQueue({ ctx });

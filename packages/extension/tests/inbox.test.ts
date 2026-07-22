@@ -58,6 +58,15 @@ describe("formatMessage", () => {
       "New CCCC message from carol:\n\n(no text)\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
     );
   });
+
+  test("does NOT contain standby/wait instructions", () => {
+    const event = makeEvent({ id: "evt-4", by: "dave", data: { text: "ping" } });
+    const result = formatMessage(event);
+    expect(result).not.toMatch(/\bstandby\b/i);
+    // The only "wait" that may appear is in the user's message text, not in the format scaffolding
+    const scaffolding = result.split("\n\n---\n")[1] ?? "";
+    expect(scaffolding).not.toMatch(/\bwait\b/i);
+  });
 });
 
 // ---- shouldDeliver ----
