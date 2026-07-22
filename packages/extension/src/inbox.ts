@@ -21,7 +21,7 @@ export function formatMessage(event: CCCSEvent): string {
   const by = event.by ?? "unknown";
   const raw = event.data?.text;
   const text = typeof raw === "string" ? raw : "(no text)";
-  return `New CCCC message from ${by}:\n\n${text}\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.`;
+  return `New CCCC message from ${by}:\n\n${text}\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the \`cccc_reply\` tool to reply to this specific message.\nUse the \`cccc_send\` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.`;
 }
 
 /**
