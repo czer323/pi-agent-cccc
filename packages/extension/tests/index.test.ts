@@ -1167,3 +1167,77 @@ test("cccc_list_actors tool warns when multiple groups connected", async () => {
     warnSpy.mockRestore();
   }
 });
+
+test("cccc_send warns when multiple groups connected and no groupId specified", async () => {
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    mockLoadConfig.mockReturnValue({
+      daemonHost: "localhost",
+      daemonPort: 9765,
+      groups: ["group-a", "group-b"],
+      actorId: null,
+      pollIntervalMs: 3000,
+    });
+    mockEnsureRegistered.mockResolvedValue("actor-123");
+
+    const pi = createMockPi();
+    mod(pi);
+    await triggerSessionStart(pi);
+
+    const sendTool = pi._registeredTools.find((t: any) => t.name === "cccc_send");
+    const result = await sendTool.execute("call-1", { text: "hello" }, undefined, undefined, {});
+
+    // Routes to first group by default
+    expect(mockSend).toHaveBeenCalledWith({
+      groupId: "group-a",
+      text: "hello",
+      to: undefined,
+    });
+    expect(result.content[0].text).toContain("Message sent");
+    expect(result.details.groupId).toBe("group-a");
+    // Warns about multiple groups
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Multiple groups connected"));
+  } finally {
+    warnSpy.mockRestore();
+  }
+});
+
+test("cccc_reply warns when multiple groups connected and no groupId specified", async () => {
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    mockLoadConfig.mockReturnValue({
+      daemonHost: "localhost",
+      daemonPort: 9765,
+      groups: ["group-a", "group-b"],
+      actorId: null,
+      pollIntervalMs: 3000,
+    });
+    mockEnsureRegistered.mockResolvedValue("actor-123");
+
+    const pi = createMockPi();
+    mod(pi);
+    await triggerSessionStart(pi);
+
+    const replyTool = pi._registeredTools.find((t: any) => t.name === "cccc_reply");
+    const result = await replyTool.execute(
+      "call-1",
+      { text: "thanks", eventId: "evt-1" },
+      undefined,
+      undefined,
+      {},
+    );
+
+    // Routes to first group by default
+    expect(mockReply).toHaveBeenCalledWith({
+      groupId: "group-a",
+      replyTo: "evt-1",
+      text: "thanks",
+    });
+    expect(result.content[0].text).toContain("Reply sent");
+    expect(result.details.groupId).toBe("group-a");
+    // Warns about multiple groups
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Multiple groups connected"));
+  } finally {
+    warnSpy.mockRestore();
+  }
+});
