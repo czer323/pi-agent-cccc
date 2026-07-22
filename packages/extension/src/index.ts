@@ -69,6 +69,7 @@ export default function (pi: ExtensionAPI) {
   let inboxQueue: InboxQueue | null = null;
   // Captured from session_start for use in session_shutdown (no ctx param in shutdown event)
   let sessionCtx: ExtensionContext | null = null;
+  const config = loadConfig();
 
   /**
    * Register cccc_send and cccc_reply tools so the agent can send messages
@@ -356,10 +357,10 @@ export default function (pi: ExtensionAPI) {
   }
 
   /**
-   * Register slash commands so the user can interact with CCCC from the prompt.
-   * Runs inside session_start after connections are established.
+   * Register slash commands so commands are immediately available in the palette.
+   * Handlers check connections.size at execution time.
    */
-  function registerCommands(config: import("./config.ts").BridgeConfig) {
+  function registerCommands() {
     /**
      * Parse a --group <id> prefix from the command args string.
      * Returns { groupId, rest } where rest is the remaining text without the --group prefix.
@@ -582,9 +583,11 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
+  // Register commands at factory scope so they appear in the palette immediately
+  registerCommands();
+
   pi.on("session_start", async (_event, ctx) => {
     sessionCtx = ctx;
-    const config = loadConfig();
 
     // Resolve effective groups: explicit config, auto-discovery, or default fallback
     let effectiveGroups = config.groups;
@@ -775,7 +778,6 @@ export default function (pi: ExtensionAPI) {
     // Register tools for both parent and sub-agent sessions when connected
     if (connections.size > 0) {
       registerTools(config);
-      registerCommands(config);
       console.log("[cccc-bridge] CCCC coordination skill available: skill://cccc-coordination");
     }
   });
