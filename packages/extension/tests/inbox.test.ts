@@ -14,7 +14,7 @@ const testPollInterval = 100;
 function makeEvent(overrides: Partial<CCCSEvent> & { id: string }): CCCSEvent {
   return {
     id: overrides.id,
-    kind: "chat.message",
+    kind: overrides.kind ?? "chat.message",
     group_id: overrides.group_id ?? "g_test",
     by: overrides.by ?? "unknown",
     data: overrides.data ?? { text: "(no text)" },
@@ -41,21 +41,21 @@ describe("formatMessage", () => {
   test("produces correct output with text", () => {
     const event = makeEvent({ id: "evt-1", by: "alice", data: { text: "Hello world" } });
     expect(formatMessage(event)).toBe(
-      "New CCCC message from alice:\n\nHello world\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
+      "---\n**From:** alice\n**Group:** g_test\n**Received:** 2026-07-21T00:00:00Z\n\nHello world\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
     );
   });
 
   test("handles missing text with fallback", () => {
     const event = makeEvent({ id: "evt-2", by: "bob", data: {} });
     expect(formatMessage(event)).toBe(
-      "New CCCC message from bob:\n\n(no text)\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
+      "---\n**From:** bob\n**Group:** g_test\n**Received:** 2026-07-21T00:00:00Z\n\n(no text)\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
     );
   });
 
   test("handles null text with fallback", () => {
     const event = makeEvent({ id: "evt-3", by: "carol", data: { text: null } });
     expect(formatMessage(event)).toBe(
-      "New CCCC message from carol:\n\n(no text)\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
+      "---\n**From:** carol\n**Group:** g_test\n**Received:** 2026-07-21T00:00:00Z\n\n(no text)\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
     );
   });
 
@@ -64,7 +64,7 @@ describe("formatMessage", () => {
     const result = formatMessage(event);
     expect(result).not.toMatch(/\bstandby\b/i);
     // The only "wait" that may appear is in the user's message text, not in the format scaffolding
-    const scaffolding = result.split("\n\n---\n")[1] ?? "";
+    const scaffolding = result.split("\n\n---\n## ")[1] ?? "";
     expect(scaffolding).not.toMatch(/\bwait\b/i);
   });
 
@@ -75,6 +75,102 @@ describe("formatMessage", () => {
     expect(output).toContain("cccc_send");
     expect(output).toContain("Do NOT reply");
     expect(output).toContain("in-session");
+  });
+
+  // ---- Provenance metadata ----
+
+  test("includes sender in header", () => {
+    const event = makeEvent({ id: "p1", by: "alice", data: { text: "hi" } });
+    const output = formatMessage(event);
+    expect(output).toContain("**From:** alice");
+  });
+
+  test("includes group in header", () => {
+    const event = makeEvent({ id: "p2", by: "bob", data: { text: "hi" } });
+    const output = formatMessage(event);
+    expect(output).toContain("**Group:** g_test");
+  });
+
+  test("includes timestamp in header", () => {
+    const event = makeEvent({ id: "p3", by: "carol", data: { text: "hi" } });
+    const output = formatMessage(event);
+    expect(output).toContain("**Received:** 2026-07-21T00:00:00Z");
+  });
+
+  test("includes reply-required flag when present", () => {
+    const event = makeEvent({
+      id: "p4",
+      by: "dave",
+      data: { text: "action needed", reply_required: true },
+    });
+    const output = formatMessage(event);
+    expect(output).toContain("**Reply required**");
+  });
+
+  test("omits reply-required flag when not present", () => {
+    const event = makeEvent({ id: "p5", by: "eve", data: { text: "normal" } });
+    const output = formatMessage(event);
+    expect(output).not.toContain("**Reply required**");
+  });
+
+  test("includes cross-group info when kind is chat.cross_group_receipt", () => {
+    const event = makeEvent({
+      id: "p6",
+      by: "frank",
+      kind: "chat.cross_group_receipt",
+      data: { text: "forwarded", src_group_id: "other-group" },
+    });
+    const output = formatMessage(event);
+    expect(output).toContain("Cross-group message from other-group");
+  });
+
+  test("omits cross-group info for normal chat.message", () => {
+    const event = makeEvent({ id: "p7", by: "grace", data: { text: "normal" } });
+    const output = formatMessage(event);
+    expect(output).not.toMatch(/Cross-group message/);
+  });
+
+  test("includes attention priority when present", () => {
+    const event = makeEvent({
+      id: "p8",
+      by: "heidi",
+      data: { text: "urgent", priority: "attention" },
+    });
+    const output = formatMessage(event);
+    expect(output).toContain("[ATTENTION]");
+  });
+
+  test("omits attention priority for normal priority", () => {
+    const event = makeEvent({ id: "p9", by: "ivan", data: { text: "normal" } });
+    const output = formatMessage(event);
+    expect(output).not.toContain("[ATTENTION]");
+  });
+
+  test("includes all provenance fields together when applicable", () => {
+    const event = makeEvent({
+      id: "p10",
+      by: "judy",
+      kind: "chat.cross_group_receipt",
+      data: {
+        text: "combo",
+        reply_required: true,
+        priority: "attention",
+        src_group_id: "remote-group",
+      },
+    });
+    const output = formatMessage(event);
+    expect(output).toContain("**From:** judy");
+    expect(output).toContain("**Group:** g_test");
+    expect(output).toContain("**Received:** 2026-07-21T00:00:00Z");
+    expect(output).toContain("Cross-group message from remote-group");
+    expect(output).toContain("**Reply required**");
+    expect(output).toContain("[ATTENTION]");
+  });
+
+  test("uses unknown when by is absent", () => {
+    const event = makeEvent({ id: "p11", by: undefined, data: { text: "anon" } });
+    const output = formatMessage(event);
+    expect(output).toContain("**From:** unknown");
   });
 });
 
@@ -183,7 +279,7 @@ describe("InboxPoller", () => {
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         content:
-          "New CCCC message from alice:\n\nHello\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
+          "---\n**From:** alice\n**Group:** g_test\n**Received:** 2026-07-21T00:00:00Z\n\nHello\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the `cccc_reply` tool to reply to this specific message.\nUse the `cccc_send` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.",
         details: {
           actorId: testActorId,
           groupId: testGroupId,

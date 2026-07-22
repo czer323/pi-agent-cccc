@@ -12,16 +12,41 @@ export interface InboxPollerOptions {
 }
 
 /**
- * Format a CCCC event into a human-readable message string.
+ * Format a CCCC event into a human-readable message string with provenance metadata.
  *
- * Produces: "New CCCC message from <by>:\n\n<text>"
- * Falls back to "(no text)" when event.data.text is missing.
+ * Produces a header block with sender, group, timestamp, and optional flags
+ * (cross-group, reply-required, attention priority), followed by the message text.
  */
 export function formatMessage(event: CCCSEvent): string {
   const by = event.by ?? "unknown";
   const raw = event.data?.text;
   const text = typeof raw === "string" ? raw : "(no text)";
-  return `New CCCC message from ${by}:\n\n${text}\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the \`cccc_reply\` tool to reply to this specific message.\nUse the \`cccc_send\` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.`;
+  const groupId = event.group_id ?? "?";
+  const ts = event.ts ?? "?";
+
+  const headerLines: string[] = [];
+  headerLines.push(`**From:** ${by}`);
+  headerLines.push(`**Group:** ${groupId}`);
+  headerLines.push(`**Received:** ${ts}`);
+
+  if (event.kind === "chat.cross_group_receipt") {
+    const srcGroupId = event.data?.src_group_id as string | undefined;
+    if (srcGroupId) {
+      headerLines.push(`Cross-group message from ${srcGroupId}`);
+    }
+  }
+
+  if (event.data?.reply_required === true) {
+    headerLines.push("**Reply required**");
+  }
+
+  if (event.data?.priority === "attention") {
+    headerLines.push("[ATTENTION]");
+  }
+
+  const header = headerLines.join("\n");
+
+  return `---\n${header}\n\n${text}\n\n---\n## CCCC Reply Instructions\n\nIMPORTANT: Do NOT reply in this session/chat.\nYour response will be visible here automatically.\n\nUse the \`cccc_reply\` tool to reply to this specific message.\nUse the \`cccc_send\` tool to send a new message to the group.\n\nReply ONLY through CCCC tools. Do NOT reply in-session.`;
 }
 
 /**
