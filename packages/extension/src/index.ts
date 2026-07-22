@@ -383,6 +383,15 @@ export default function (pi: ExtensionAPI) {
 
           // Publish parent actor ID so future sub-agents in this process can detect
           process.env[`${PARENT_ACTOR_ENV_PREFIX}${groupId}`] = actorId;
+          // Broadcast online status to group
+          try {
+            await client.send({
+              groupId,
+              text: `Agent ${actorId} online`,
+            });
+          } catch (err) {
+            console.error(`[cccc-bridge] Failed to broadcast online status for "${actorId}":`, err);
+          }
 
           // Shared dedup set: streamer → poller fallback continuity
           const seenIds = new Set<string>();
@@ -451,6 +460,18 @@ export default function (pi: ExtensionAPI) {
     for (const [groupId, conn] of connections) {
       conn.streamer?.stop();
       conn.poller?.stop();
+      // Broadcast offline status before removing actor
+      try {
+        await conn.client.send({
+          groupId,
+          text: `Agent ${conn.actorId} going offline`,
+        });
+      } catch (err) {
+        console.error(
+          `[cccc-bridge] Failed to broadcast offline status for "${conn.actorId}":`,
+          err,
+        );
+      }
       try {
         await conn.client.actorRemove(groupId, conn.actorId);
         console.log(`[cccc-bridge] Removed actor "${conn.actorId}" from group "${groupId}"`);
