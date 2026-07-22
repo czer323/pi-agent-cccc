@@ -1750,6 +1750,20 @@ function setupSlashTest() {
   return pi;
 }
 
+test("slash commands are registered at factory scope, before session_start", () => {
+  // This test currently FAILS — commands are only registered inside session_start.
+  // After the fix, commands register at factory scope immediately.
+  const pi = setupSlashTest();
+  // Commands should be available right after mod(pi), before any session_start
+  expect(pi.registerCommand).toHaveBeenCalled();
+  const cmdNames = pi._registeredCommands.map((c: any) => c.name);
+  expect(cmdNames).toContain("cccc-status");
+  expect(cmdNames).toContain("cccc-actors");
+  expect(cmdNames).toContain("cccc-send");
+  expect(cmdNames).toContain("cccc-inbox");
+  expect(cmdNames).toContain("cccc-rename");
+  expect(cmdNames).toContain("cccc-config");
+});
 test("registers all slash commands on session_start", async () => {
   const pi = setupSlashTest();
   await triggerSessionStart(pi);
@@ -1878,7 +1892,7 @@ test("cccc-rename command warns on empty title", async () => {
   expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("Usage"), "warning");
 });
 
-test("slash commands are not registered when no groups connected", async () => {
+test("slash commands are always registered even without groups, handlers show not connected", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
@@ -1889,9 +1903,19 @@ test("slash commands are not registered when no groups connected", async () => {
 
   const pi = createMockPi();
   mod(pi);
-  await triggerSessionStart(pi);
 
-  expect(pi.registerCommand).not.toHaveBeenCalled();
+  // Commands are always registered at factory scope regardless of groups
+  expect(pi.registerCommand).toHaveBeenCalled();
+  const cmdNames = pi._registeredCommands.map((c: any) => c.name);
+  expect(cmdNames).toContain("cccc-status");
+  expect(cmdNames).toContain("cccc-config");
+  expect(cmdNames).toContain("cccc-actors");
+  expect(cmdNames).toContain("cccc-send");
+  expect(cmdNames).toContain("cccc-inbox");
+  expect(cmdNames).toContain("cccc-rename");
+
+  // But tools are not registered (still async in session_start)
+  expect(pi.registerTool).not.toHaveBeenCalled();
 });
 
 // ---------- /cccc-config command tests ----------
@@ -1948,7 +1972,7 @@ test("cccc-config command shows multi-group connections", async () => {
   expect(notifyText).toContain("Auto-discover: disabled");
 });
 
-test("cccc-config shows warning when not connected", async () => {
+test("cccc-config handler shows warning when not connected", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
@@ -1962,8 +1986,11 @@ test("cccc-config shows warning when not connected", async () => {
   mod(pi);
   await triggerSessionStart(pi);
 
-  // Commands not registered when no groups — nothing to test
-  expect(pi.registerCommand).not.toHaveBeenCalled();
+  // Commands are always registered — trigger the command handler
+  await triggerCommand(pi, "cccc-config");
+
+  // Handler checks connections.size and shows "Not connected"
+  expect(pi._notify).toHaveBeenCalledWith("CCCC: Not connected", "warning");
 });
 
 // ---------- multi-group slash command tests ----------
