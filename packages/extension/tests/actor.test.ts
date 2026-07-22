@@ -140,6 +140,21 @@ describe("ensureRegistered", () => {
   });
 });
 
+test("handles 'Name already exists' gracefully when actor is still registered", async () => {
+  const client = mockClient();
+  const config = { ...baseConfig } as BridgeConfig;
+  const conflictError = new BridgeClientError(
+    "registerActor failed",
+    new Error("conflict: Name already exists"),
+  );
+  vi.mocked(client.registerActor).mockRejectedValue(conflictError);
+
+  const result = await ensureRegistered(client, config, "test-group");
+
+  expect(result).toMatch(/^pi-/);
+  expect(client.registerActor).toHaveBeenCalledTimes(1);
+});
+
 describe("ensureRegistered title", () => {
   beforeEach(() => {
     vi.clearAllMocks();

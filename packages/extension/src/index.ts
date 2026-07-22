@@ -7,7 +7,12 @@ import { Type } from "@sinclair/typebox";
 import { loadConfig } from "./config.ts";
 import { defaultBridgeConfig, BridgeClientError } from "./types.ts";
 import { CCCCBridgeClient } from "./client.ts";
-import { ensureRegistered, buildActorId, MAX_ACTOR_ID_LENGTH } from "./actor.ts";
+import {
+  ensureRegistered,
+  isNameAlreadyExistsError,
+  buildActorId,
+  MAX_ACTOR_ID_LENGTH,
+} from "./actor.ts";
 import { discoverGroups } from "./discovery.ts";
 import { InboxPoller } from "./inbox.ts";
 import { InboxStreamer } from "./streamer.ts";
@@ -458,14 +463,24 @@ export default function (pi: ExtensionAPI) {
                 runner: "headless",
                 title: config.agentTitle,
               });
-              await client.send({
-                groupId,
-                text: `Agent ${actorId} online`,
-              });
-              console.log(`[cccc-bridge] Re-registered actor "${actorId}" after reconnect`);
             } catch (err) {
-              console.error(`[cccc-bridge] Reconnect handler failed for "${actorId}":`, err);
+              // Actor may already be registered from a previous session
+              // that was not cleaned up (e.g. OMP crash, unclean shutdown).
+              if (isNameAlreadyExistsError(err)) {
+                console.log(
+                  "[cccc-bridge] Actor already registered, reusing existing registration",
+                );
+              } else {
+                console.error(`[cccc-bridge] Reconnect handler failed for "${actorId}":`, err);
+                return;
+              }
             }
+
+            await client.send({
+              groupId,
+              text: `Agent ${actorId} online`,
+            });
+            console.log(`[cccc-bridge] Re-registered actor "${actorId}" after reconnect`);
           };
 
           // Fallback polling starter
