@@ -13,6 +13,7 @@ function makeEvent(overrides: Partial<CCCSEvent> & { id: string }): CCCSEvent {
   return {
     id: overrides.id,
     kind: "chat.message",
+    group_id: overrides.group_id ?? "g_test",
     by: overrides.by ?? "unknown",
     data: overrides.data ?? { text: "(no text)" },
     ts: overrides.ts ?? "2026-07-21T00:00:00Z",
@@ -34,7 +35,8 @@ async function* mockGenerator(items: EventStreamItem[]) {
 }
 
 function createMocks() {
-  const eventsStream = vi.fn() as unknown as vi.Mock & ((opts: EventsStreamOptions) => AsyncGenerator<EventStreamItem>);
+  const eventsStream = vi.fn() as unknown as ReturnType<typeof vi.fn> &
+    ((opts: EventsStreamOptions) => AsyncGenerator<EventStreamItem>);
   const client = { eventsStream } as unknown as CCCCBridgeClient;
   const enqueue = vi.fn();
   const queue = { enqueue } as unknown as InboxQueue;
@@ -100,7 +102,9 @@ describe("InboxStreamer", () => {
   test("skips already-seen events", async () => {
     const { client, eventsStream, queue, enqueue, onFallback } = createMocks();
     const event = makeEvent({ id: "evt-1", by: "alice", data: { text: "Hello" } });
-    eventsStream.mockReturnValue(mockGenerator([makeEventStreamItem(event), makeEventStreamItem(event)]));
+    eventsStream.mockReturnValue(
+      mockGenerator([makeEventStreamItem(event), makeEventStreamItem(event)]),
+    );
 
     const streamer = new InboxStreamer({
       client,
@@ -180,7 +184,9 @@ describe("InboxStreamer", () => {
     const event = makeEvent({ id: "evt-1", by: "alice" });
     const event2 = makeEvent({ id: "evt-2", by: "bob" });
     // Both events in one generator
-    eventsStream.mockReturnValue(mockGenerator([makeEventStreamItem(event), makeEventStreamItem(event2)]));
+    eventsStream.mockReturnValue(
+      mockGenerator([makeEventStreamItem(event), makeEventStreamItem(event2)]),
+    );
 
     const streamer = new InboxStreamer({
       client,
@@ -313,9 +319,19 @@ describe("InboxStreamer", () => {
 
   test("filters out events addressed to another actor", async () => {
     const { client, eventsStream, queue, enqueue, onFallback } = createMocks();
-    const forMe = makeEvent({ id: "evt-1", by: "alice", data: { text: "for me", to: ["test-actor"] } });
-    const forOther = makeEvent({ id: "evt-2", by: "bob", data: { text: "for other", to: ["other-actor"] } });
-    eventsStream.mockReturnValue(mockGenerator([makeEventStreamItem(forMe), makeEventStreamItem(forOther)]));
+    const forMe = makeEvent({
+      id: "evt-1",
+      by: "alice",
+      data: { text: "for me", to: ["test-actor"] },
+    });
+    const forOther = makeEvent({
+      id: "evt-2",
+      by: "bob",
+      data: { text: "for other", to: ["other-actor"] },
+    });
+    eventsStream.mockReturnValue(
+      mockGenerator([makeEventStreamItem(forMe), makeEventStreamItem(forOther)]),
+    );
 
     const streamer = new InboxStreamer({
       client,
@@ -337,9 +353,19 @@ describe("InboxStreamer", () => {
 
   test("filters out @foreman events", async () => {
     const { client, eventsStream, queue, enqueue, onFallback } = createMocks();
-    const general = makeEvent({ id: "evt-1", by: "alice", data: { text: "general", to: ["@all"] } });
-    const foremanOnly = makeEvent({ id: "evt-2", by: "bob", data: { text: "foreman only", to: ["@foreman"] } });
-    eventsStream.mockReturnValue(mockGenerator([makeEventStreamItem(general), makeEventStreamItem(foremanOnly)]));
+    const general = makeEvent({
+      id: "evt-1",
+      by: "alice",
+      data: { text: "general", to: ["@all"] },
+    });
+    const foremanOnly = makeEvent({
+      id: "evt-2",
+      by: "bob",
+      data: { text: "foreman only", to: ["@foreman"] },
+    });
+    eventsStream.mockReturnValue(
+      mockGenerator([makeEventStreamItem(general), makeEventStreamItem(foremanOnly)]),
+    );
 
     const streamer = new InboxStreamer({
       client,

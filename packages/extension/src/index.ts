@@ -1,4 +1,8 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  AgentToolUpdateCallback,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { loadConfig } from "./config.ts";
 import { defaultBridgeConfig, BridgeClientError } from "./types.ts";
@@ -71,7 +75,13 @@ export default function (pi: ExtensionAPI) {
           }),
         ),
       }),
-      execute: async (_toolCallId, params) => {
+      execute: async (
+        _toolCallId: string,
+        params: { groupId?: string; text: string; to?: string },
+        _signal?: AbortSignal,
+        _onUpdate?: AgentToolUpdateCallback<{ eventId?: string; groupId?: string }>,
+        _ctx?: ExtensionContext,
+      ) => {
         const groupId = params.groupId ?? connections.keys().next().value;
         if (!groupId || !connections.has(groupId)) {
           return {
@@ -81,7 +91,10 @@ export default function (pi: ExtensionAPI) {
                 text: `Error: Not connected to group "${groupId || "(none)"}"`,
               },
             ],
-            details: {},
+            details: {
+              eventId: undefined as string | undefined,
+              groupId: undefined as string | undefined,
+            },
           };
         }
         if (!params.groupId && connections.size > 1) {
@@ -119,7 +132,13 @@ export default function (pi: ExtensionAPI) {
           }),
         ),
       }),
-      execute: async (_toolCallId, params) => {
+      execute: async (
+        _toolCallId: string,
+        params: { eventId: string; groupId?: string; text: string },
+        _signal?: AbortSignal,
+        _onUpdate?: AgentToolUpdateCallback<{ eventId?: string; groupId?: string }>,
+        _ctx?: ExtensionContext,
+      ) => {
         const groupId = params.groupId ?? connections.keys().next().value;
         if (!groupId || !connections.has(groupId)) {
           return {
@@ -129,7 +148,10 @@ export default function (pi: ExtensionAPI) {
                 text: `Error: Not connected to group "${groupId || "(none)"}"`,
               },
             ],
-            details: {},
+            details: {
+              eventId: undefined as string | undefined,
+              groupId: undefined as string | undefined,
+            },
           };
         }
         if (!params.groupId && connections.size > 1) {
@@ -162,11 +184,20 @@ export default function (pi: ExtensionAPI) {
       description: "Returns the current CCCC actor ID and the list of connected group IDs.",
       promptSnippet: "Identify my CCCC identity",
       parameters: Type.Object({}),
-      execute: async () => {
+      execute: async (
+        _toolCallId: string,
+        _params: Record<string, never>,
+        _signal?: AbortSignal,
+        _onUpdate?: AgentToolUpdateCallback<{ actorId?: string; groupIds?: string[] }>,
+        _ctx?: ExtensionContext,
+      ) => {
         if (connections.size === 0) {
           return {
             content: [{ type: "text" as const, text: "Not connected to any CCCC group" }],
-            details: {},
+            details: {
+              actorId: undefined as string | undefined,
+              groupIds: undefined as string[] | undefined,
+            },
           };
         }
         // Use the first connection's actorId (all connections share the same session actor)
@@ -195,21 +226,27 @@ export default function (pi: ExtensionAPI) {
       execute: async (
         _toolCallId: string,
         _params: Record<string, never>,
-        _signal: AbortSignal | undefined,
-        _onUpdate: unknown,
-        _ctx: unknown,
+        _signal?: AbortSignal,
+        _onUpdate?: AgentToolUpdateCallback<{ groupId?: string; actorCount?: number }>,
+        _ctx?: ExtensionContext,
       ) => {
         if (connections.size === 0) {
           return {
             content: [{ type: "text" as const, text: "Not connected to any CCCC group" }],
-            details: {},
+            details: {
+              groupId: undefined as string | undefined,
+              actorCount: undefined as number | undefined,
+            },
           };
         }
         const groupId = connections.keys().next().value;
         if (groupId == null) {
           return {
             content: [{ type: "text" as const, text: "Not connected to any CCCC group" }],
-            details: {},
+            details: {
+              groupId: undefined as string | undefined,
+              actorCount: undefined as number | undefined,
+            },
           };
         }
         if (connections.size > 1) {

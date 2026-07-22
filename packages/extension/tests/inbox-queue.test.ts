@@ -14,9 +14,7 @@ function createMockCtx(isIdle: boolean = true) {
   return { isIdle: vi.fn(() => isIdle) } as any;
 }
 
-function createQueue(
-  overrides?: Partial<{ pi: any; ctx: any }>,
-) {
+function createQueue(overrides?: Partial<{ pi: any; ctx: any }>) {
   const { pi, sendMessage } = createMockPi();
   const ctx = createMockCtx(true);
   return {
@@ -29,7 +27,11 @@ function createQueue(
   };
 }
 
-function makeMsg(overrides?: { content?: string; details?: Record<string, unknown>; onDelivered?: () => void }) {
+function makeMsg(overrides?: {
+  content?: string;
+  details?: Record<string, unknown>;
+  onDelivered?: () => void;
+}) {
   return {
     content: overrides?.content ?? "New CCCC message from alice:\n\nHello\n\n---\nReply to this...",
     details: overrides?.details ?? { groupId: "g1", eventId: "e1", by: "alice", text: "Hello" },
@@ -166,10 +168,12 @@ describe("InboxQueue", () => {
     // Create 5 messages of ~5K chars each
     for (let i = 0; i < 5; i++) {
       const text = "x".repeat(5000);
-      queue.enqueue(makeMsg({
-        content: `New CCCC message from alice:\n\n${text}\n\n---\nReply...`,
-        details: { eventId: `e${i}` },
-      }));
+      queue.enqueue(
+        makeMsg({
+          content: `New CCCC message from alice:\n\n${text}\n\n---\nReply...`,
+          details: { eventId: `e${i}` },
+        }),
+      );
     }
 
     vi.advanceTimersByTime(201);
@@ -187,10 +191,12 @@ describe("InboxQueue", () => {
   test("single message uses individual formatting (no batch header)", () => {
     const { queue, sendMessage } = createQueue();
 
-    queue.enqueue(makeMsg({
-      content: "New CCCC message from alice:\n\nHello\n\n---\nReply to this...",
-      details: { eventId: "e1" },
-    }));
+    queue.enqueue(
+      makeMsg({
+        content: "New CCCC message from alice:\n\nHello\n\n---\nReply to this...",
+        details: { eventId: "e1" },
+      }),
+    );
 
     vi.advanceTimersByTime(201);
 
@@ -203,14 +209,18 @@ describe("InboxQueue", () => {
   test("multiple messages use batch header", () => {
     const { queue, sendMessage } = createQueue();
 
-    queue.enqueue(makeMsg({
-      content: "msg1",
-      details: { eventId: "e1" },
-    }));
-    queue.enqueue(makeMsg({
-      content: "msg2",
-      details: { eventId: "e2" },
-    }));
+    queue.enqueue(
+      makeMsg({
+        content: "msg1",
+        details: { eventId: "e1" },
+      }),
+    );
+    queue.enqueue(
+      makeMsg({
+        content: "msg2",
+        details: { eventId: "e2" },
+      }),
+    );
 
     vi.advanceTimersByTime(201);
 
@@ -222,10 +232,7 @@ describe("InboxQueue", () => {
     expect(call.details).toEqual({
       batched: true,
       count: 2,
-      messages: [
-        { eventId: "e1" },
-        { eventId: "e2" },
-      ],
+      messages: [{ eventId: "e1" }, { eventId: "e2" }],
     });
   });
 
@@ -281,14 +288,20 @@ describe("InboxQueue", () => {
   });
 
   test("delivery error does not crash the queue", () => {
-    const pi = { sendMessage: vi.fn(() => { throw new Error("delivery failed"); }) };
+    const pi = {
+      sendMessage: vi.fn(() => {
+        throw new Error("delivery failed");
+      }),
+    };
     const ctx = createMockCtx(true);
 
     const queue = new InboxQueue({ pi: pi as any, ctx });
-    queue.enqueue(makeMsg({
-      details: { eventId: "e1" },
-      onDelivered: undefined,
-    }));
+    queue.enqueue(
+      makeMsg({
+        details: { eventId: "e1" },
+        onDelivered: undefined,
+      }),
+    );
 
     vi.advanceTimersByTime(201);
 

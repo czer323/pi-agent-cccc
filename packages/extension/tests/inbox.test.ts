@@ -15,6 +15,7 @@ function makeEvent(overrides: Partial<CCCSEvent> & { id: string }): CCCSEvent {
   return {
     id: overrides.id,
     kind: "chat.message",
+    group_id: overrides.group_id ?? "g_test",
     by: overrides.by ?? "unknown",
     data: overrides.data ?? { text: "(no text)" },
     ts: overrides.ts ?? "2026-07-21T00:00:00Z",
@@ -163,7 +164,8 @@ describe("InboxPoller", () => {
     expect(enqueue).toHaveBeenCalledTimes(1);
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
+        content:
+          "New CCCC message from alice:\n\nHello\n\n---\nReply to this message through CCCC (not in this session). Use the cccc_send or cccc_reply tool (registered by the bridge extension) so your reply is visible to all group members in the CCCC Web UI.",
         details: {
           actorId: testActorId,
           groupId: testGroupId,

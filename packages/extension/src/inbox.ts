@@ -60,6 +60,8 @@ export class InboxPoller {
   private timer: ReturnType<typeof setInterval> | null = null;
   private seenIds: Set<string>;
   private options: InboxPollerOptions;
+  private lastErrorMsg: string | null = null;
+  private consecutiveErrors = 0;
 
   constructor(options: InboxPollerOptions) {
     this.seenIds = options.seenIds ?? new Set<string>();
@@ -83,6 +85,8 @@ export class InboxPoller {
       this.timer = null;
     }
     this.seenIds.clear();
+    this.lastErrorMsg = null;
+    this.consecutiveErrors = 0;
   }
 
   /**
@@ -92,12 +96,21 @@ export class InboxPoller {
    * All errors are caught and logged — this method never throws.
    */
   async poll(): Promise<void> {
+    // Backoff: skip poll if we've had consecutive errors
+    if (this.consecutiveErrors >= 5) {
+      // Only poll every 5th cycle when in backoff
+      if (this.consecutiveErrors % 5 !== 0) return;
+    }
     try {
       const events = await this.options.client.inboxList({
         groupId: this.options.groupId,
         actorId: this.options.actorId,
       });
-
+      // Success — reset error state
+      if (this.consecutiveErrors > 0) {
+        this.consecutiveErrors = 0;
+        this.lastErrorMsg = null;
+      }
       for (const event of events) {
         if (this.seenIds.has(event.id)) continue;
 
@@ -121,13 +134,18 @@ export class InboxPoller {
             },
             onDelivered: () => {
               // Mark as read on the server after successful delivery
-              this.options.client.inboxMarkRead({
-                groupId: this.options.groupId,
-                actorId: this.options.actorId,
-                eventId: event.id,
-              }).catch((markErr) => {
-                console.error(`[cccc-bridge] Failed to mark message ${event.id} as read:`, markErr);
-              });
+              this.options.client
+                .inboxMarkRead({
+                  groupId: this.options.groupId,
+                  actorId: this.options.actorId,
+                  eventId: event.id,
+                })
+                .catch((markErr) => {
+                  console.error(
+                    `[cccc-bridge] Failed to mark message ${event.id} as read:`,
+                    markErr,
+                  );
+                });
             },
           });
         } catch (enqueueErr) {
@@ -138,7 +156,16 @@ export class InboxPoller {
         this.seenIds.add(event.id);
       }
     } catch (pollErr) {
-      console.error("[cccc-bridge] Inbox poll failed:", pollErr);
+      const msg = pollErr instanceof Error ? pollErr.message : String(pollErr);
+      this.consecutiveErrors++;
+      // Only log if the error message changed (dedup, like streamer)
+      if (msg !== this.lastErrorMsg) {
+        console.error(`[cccc-bridge] Inbox poll failed (${this.consecutiveErrors}x):`, msg);
+        this.lastErrorMsg = msg;
+      }
+      // Backoff: skip next poll cycle(s) on repeated failures
+      // After 5 consecutive errors, the interval effectively becomes 5x slower
+      // but we don't change the timer — just skip the poll() call
     }
   }
 }

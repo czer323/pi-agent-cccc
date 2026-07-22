@@ -67,7 +67,6 @@ export class CCCCBridgeClient {
         timeoutMs: config.timeoutMs,
       });
     } catch (err) {
-      console.error("Failed to connect to CCCC daemon:", err);
       throw new BridgeClientError("Failed to connect to CCCC daemon", err);
     }
   }
@@ -99,7 +98,6 @@ export class CCCCBridgeClient {
       });
       return { actorId: result.actor_id };
     } catch (err) {
-      console.error("registerActor failed:", err);
       throw new BridgeClientError("registerActor failed", err);
     }
   }
@@ -135,8 +133,10 @@ export class CCCCBridgeClient {
       });
       return result.messages;
     } catch (err) {
-      console.error("inboxList failed:", err);
-      throw new BridgeClientError("inboxList failed", err);
+      throw new BridgeClientError(
+        "inboxList failed",
+        err instanceof Error ? err : new Error(String(err)),
+      );
     }
   }
 
@@ -154,7 +154,6 @@ export class CCCCBridgeClient {
     try {
       await this._client!.inboxMarkRead(params.groupId, params.actorId, params.eventId);
     } catch (err) {
-      console.error("inboxMarkRead failed:", err);
       throw new BridgeClientError("inboxMarkRead failed", err);
     }
   }
@@ -176,7 +175,6 @@ export class CCCCBridgeClient {
     try {
       return await this._client!.groups();
     } catch (err) {
-      console.error("groups failed:", err);
       throw new BridgeClientError("groups failed", err);
     }
   }
@@ -189,7 +187,6 @@ export class CCCCBridgeClient {
     try {
       return await this._client!.groupShow(groupId);
     } catch (err) {
-      console.error("groupShow failed:", err);
       throw new BridgeClientError("groupShow failed", err);
     }
   }
@@ -203,7 +200,6 @@ export class CCCCBridgeClient {
     try {
       return await this._client!.send(options);
     } catch (err) {
-      console.error("send failed:", err);
       throw new BridgeClientError("send failed", err);
     }
   }
@@ -217,7 +213,6 @@ export class CCCCBridgeClient {
     try {
       return await this._client!.reply(options);
     } catch (err) {
-      console.error("reply failed:", err);
       throw new BridgeClientError("reply failed", err);
     }
   }
