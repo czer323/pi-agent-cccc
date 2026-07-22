@@ -22,6 +22,10 @@ export interface BridgeConfig {
   /** Default group ID when auto-discovery finds no match (CCCC_DEFAULT_GROUP_ID).
    *  Only used when autoDiscover is true and groups array is empty. */
   defaultGroupId: string | null;
+  /** Agent title displayed in CCCC Web UI (CCCC_AGENT_TITLE, default "Pi Agent") */
+  agentTitle: string;
+  /** Sub-agent title (CCCC_SUB_AGENT_TITLE, default "Pi Sub-Agent") */
+  subAgentTitle: string;
 }
 
 /**
@@ -48,6 +52,8 @@ export function loadConfig(): BridgeConfig {
     actorId: process.env.CCCC_ACTOR_ID ?? null,
     pollIntervalMs: Number.parseInt(process.env.CCCC_POLL_INTERVAL_MS ?? "3000", 10),
     autoDiscover: process.env.CCCC_AUTO_DISCOVER !== "false",
+    agentTitle: process.env.CCCC_AGENT_TITLE ?? "Pi Agent",
+    subAgentTitle: process.env.CCCC_SUB_AGENT_TITLE ?? "Pi Sub-Agent",
     defaultGroupId: process.env.CCCC_DEFAULT_GROUP_ID ?? null,
   };
 }

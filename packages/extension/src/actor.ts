@@ -113,6 +113,7 @@ export async function ensureRegistered(
   client: CCCCBridgeClient,
   config: BridgeConfig,
   groupId: string,
+  options?: { title?: string },
 ): Promise<string> {
   const actorId = getActorId(config);
 
@@ -121,7 +122,7 @@ export async function ensureRegistered(
     actorId,
     runtime: "custom",
     runner: "headless",
-    title: "Pi Agent",
+    title: options?.title ?? "Pi Agent",
   });
 
   return actorId;

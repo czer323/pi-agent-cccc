@@ -13,6 +13,8 @@ const baseConfig: BridgeConfig = {
   pollIntervalMs: 3000,
   autoDiscover: false,
   defaultGroupId: null,
+  agentTitle: "Pi Agent",
+  subAgentTitle: "Pi Sub-Agent",
 };
 
 function mockClient() {
@@ -135,5 +137,35 @@ describe("ensureRegistered", () => {
     vi.mocked(client.registerActor).mockRejectedValue(error);
 
     await expect(ensureRegistered(client, config, "test-group")).rejects.toThrow(BridgeClientError);
+  });
+});
+
+describe("ensureRegistered title", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('uses default title "Pi Agent" when no title provided', async () => {
+    const client = mockClient();
+    const config = { ...baseConfig } as BridgeConfig;
+    vi.mocked(client.registerActor).mockResolvedValue({ actorId: "generated-actor-id" });
+
+    await ensureRegistered(client, config, "test-group");
+
+    expect(client.registerActor).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Pi Agent" }),
+    );
+  });
+
+  test("passes custom title when provided via options", async () => {
+    const client = mockClient();
+    const config = { ...baseConfig } as BridgeConfig;
+    vi.mocked(client.registerActor).mockResolvedValue({ actorId: "generated-actor-id" });
+
+    await ensureRegistered(client, config, "test-group", { title: "My Agent" });
+
+    expect(client.registerActor).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "My Agent" }),
+    );
   });
 });

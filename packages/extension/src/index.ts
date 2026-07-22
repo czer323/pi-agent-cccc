@@ -67,7 +67,7 @@ export default function (pi: ExtensionAPI) {
    * Register cccc_send and cccc_reply tools so the agent can send messages
    * and reply to events through the bridge's daemon connection.
    */
-  function registerTools() {
+  function registerTools(config: import("./config.ts").BridgeConfig) {
     // ---- cccc_send tool ----
     pi.registerTool({
       name: "cccc_send",
@@ -296,6 +296,56 @@ export default function (pi: ExtensionAPI) {
         };
       },
     });
+
+    // ---- cccc_rename tool ----
+    pi.registerTool({
+      name: "cccc_rename",
+      label: "CCCC Rename",
+      description: "Update the agent's display title in the CCCC Web UI without reconnecting.",
+      promptSnippet: "Rename my agent display name",
+      parameters: Type.Object({
+        title: Type.String({ description: "New display title for this agent" }),
+      }),
+      execute: async (
+        _toolCallId: string,
+        params: { title: string },
+        _signal?: AbortSignal,
+        _onUpdate?: AgentToolUpdateCallback<{ oldTitle?: string; newTitle?: string }>,
+        _ctx?: ExtensionContext,
+      ) => {
+        if (connections.size === 0) {
+          return {
+            content: [{ type: "text" as const, text: "Not connected to any CCCC group" }],
+            details: {
+              oldTitle: undefined as string | undefined,
+              newTitle: undefined as string | undefined,
+            },
+          };
+        }
+        const oldTitle = config.agentTitle;
+        config.agentTitle = params.title;
+
+        for (const [groupId, conn] of connections) {
+          await conn.client.registerActor({
+            groupId,
+            actorId: conn.actorId,
+            runtime: "custom",
+            runner: "headless",
+            title: params.title,
+          });
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Agent renamed from "${oldTitle}" to "${params.title}"`,
+            },
+          ],
+          details: { oldTitle, newTitle: params.title },
+        };
+      },
+    });
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -350,7 +400,7 @@ export default function (pi: ExtensionAPI) {
             actorId: childActorId,
             runtime: "custom",
             runner: "headless",
-            title: "Pi Sub-Agent",
+            title: config.subAgentTitle,
           });
 
           // Announce readiness to parent actor
@@ -379,7 +429,9 @@ export default function (pi: ExtensionAPI) {
           await client.connect(defaultBridgeConfig());
 
           // Register actor with unique per-session ID
-          const actorId = await ensureRegistered(client, config, groupId);
+          const actorId = await ensureRegistered(client, config, groupId, {
+            title: config.agentTitle,
+          });
 
           // Publish parent actor ID so future sub-agents in this process can detect
           process.env[`${PARENT_ACTOR_ENV_PREFIX}${groupId}`] = actorId;
@@ -404,7 +456,7 @@ export default function (pi: ExtensionAPI) {
                 actorId,
                 runtime: "custom",
                 runner: "headless",
-                title: "Pi Agent",
+                title: config.agentTitle,
               });
               await client.send({
                 groupId,
@@ -470,7 +522,7 @@ export default function (pi: ExtensionAPI) {
 
     // Register tools for both parent and sub-agent sessions when connected
     if (connections.size > 0) {
-      registerTools();
+      registerTools(config);
       console.log("[cccc-bridge] CCCC coordination skill available: skill://cccc-coordination");
     }
   });
