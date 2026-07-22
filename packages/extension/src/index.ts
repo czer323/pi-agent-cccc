@@ -360,18 +360,88 @@ export default function (pi: ExtensionAPI) {
    * Runs inside session_start after connections are established.
    */
   function registerCommands(config: import("./config.ts").BridgeConfig) {
-    // ---- /cccc-status command ----
-    pi.registerCommand("cccc-status", {
-      description: "Show CCCC connection status: actor ID, groups, connection state",
+    /**
+     * Parse a --group <id> prefix from the command args string.
+     * Returns { groupId, rest } where rest is the remaining text without the --group prefix.
+     */
+    function parseGroupFlag(args: string): { groupId: string | null; rest: string } {
+      const trimmed = args.trim();
+      const match = trimmed.match(/^--group\s+(\S+)\s*(.*)$/s);
+      if (match) {
+        return { groupId: match[1], rest: match[2].trim() };
+      }
+      return { groupId: null, rest: trimmed };
+    }
+
+    /**
+     * Resolve the target group ID. If --group was specified, validates it exists.
+     * If exactly one group is connected, uses it automatically.
+     * If multiple groups are connected and no --group given, returns null and
+     * already notified the user.
+     */
+    function resolveGroup(groupIdOpt: string | null, _ctx: any): string | null {
+      const groupIds = Array.from(connections.keys());
+      if (connections.size === 0) {
+        _ctx.ui.notify("CCCC: Not connected", "warning");
+        return null;
+      }
+      if (groupIdOpt) {
+        if (!connections.has(groupIdOpt)) {
+          _ctx.ui.notify(`CCCC: Not connected to group "${groupIdOpt}"`, "warning");
+          return null;
+        }
+        return groupIdOpt;
+      }
+      if (groupIds.length === 1) {
+        return groupIds[0];
+      }
+      // Multiple groups, no --group specified
+      _ctx.ui.notify(
+        `Multiple groups connected. Specify --group <id>. Connected: ${groupIds.join(", ")}`,
+        "warning",
+      );
+      return null;
+    }
+
+    // ---- /cccc-config command ----
+    pi.registerCommand("cccc-config", {
+      description:
+        "Show CCCC configuration: daemon host, port, groups, actor, title, poll interval",
       handler: async (_args, _ctx) => {
         if (connections.size === 0) {
           _ctx.ui.notify("CCCC: Not connected", "warning");
           return;
         }
-        const firstConn = connections.values().next().value!;
-        const groupIds = Array.from(connections.keys());
+        const groups = Array.from(connections.entries()).map(
+          ([gid, conn]) => `  ${gid} → Actor: ${conn.actorId}`,
+        );
         _ctx.ui.notify(
-          `CCCC Status:\n  Actor: ${firstConn.actorId}\n  Groups: ${groupIds.join(", ")}\n  Title: ${config.agentTitle}\n  State: connected`,
+          `CCCC Config:\n` +
+            `  Daemon: ${config.daemonHost}:${config.daemonPort}\n` +
+            `  Groups:\n${groups.join("\n")}\n` +
+            `  Title: ${config.agentTitle}\n` +
+            `  Poll: ${config.pollIntervalMs}ms\n` +
+            `  Sub-agent title: ${config.subAgentTitle}\n` +
+            `  Auto-discover: ${config.autoDiscover ? "enabled" : "disabled"}\n` +
+            `  Default group: ${config.defaultGroupId ?? "(none)"}`,
+          "info",
+        );
+      },
+    });
+
+    // ---- /cccc-status command ----
+    pi.registerCommand("cccc-status", {
+      description: "Show CCCC connection status: actor ID per group, connection state",
+      handler: async (_args, _ctx) => {
+        if (connections.size === 0) {
+          _ctx.ui.notify("CCCC: Not connected", "warning");
+          return;
+        }
+        const lines = Array.from(connections.entries()).map(
+          ([gid, conn]) => `  ${gid} → Actor: ${conn.actorId}`,
+        );
+        _ctx.ui.notify(
+          `CCCC Status:\n${lines.join("\n")}\n  Title: ${config.agentTitle}\n  State: connected`,
           "info",
         );
       },
@@ -379,17 +449,15 @@ export default function (pi: ExtensionAPI) {
 
     // ---- /cccc-actors command ----
     pi.registerCommand("cccc-actors", {
-      description: "List all actors in the current CCCC group",
-      handler: async (_args, _ctx) => {
+      description: "List all actors in a CCCC group. Usage: /cccc-actors [--group <id>]",
+      handler: async (args, _ctx) => {
         if (connections.size === 0) {
           _ctx.ui.notify("CCCC: Not connected", "warning");
           return;
         }
-        const groupId = connections.keys().next().value;
-        if (!groupId) {
-          _ctx.ui.notify("CCCC: No connected groups", "warning");
-          return;
-        }
+        const { groupId: groupOpt } = parseGroupFlag(args);
+        const groupId = resolveGroup(groupOpt, _ctx);
+        if (!groupId) return;
         const conn = connections.get(groupId)!;
         try {
           const detail = await conn.client.groupShow(groupId);
@@ -414,22 +482,20 @@ export default function (pi: ExtensionAPI) {
 
     // ---- /cccc-send command ----
     pi.registerCommand("cccc-send", {
-      description: "Send a message to the CCCC group. Usage: /cccc-send <text>",
+      description: "Send a message. Usage: /cccc-send [--group <id>] <text>",
       handler: async (args, _ctx) => {
-        const text = args.trim();
-        if (!text) {
-          _ctx.ui.notify("Usage: /cccc-send <message text>", "warning");
-          return;
-        }
         if (connections.size === 0) {
           _ctx.ui.notify("CCCC: Not connected", "warning");
           return;
         }
-        const groupId = connections.keys().next().value;
-        if (!groupId) {
-          _ctx.ui.notify("CCCC: No connected groups", "warning");
+        const { groupId: groupOpt, rest } = parseGroupFlag(args);
+        const text = rest;
+        if (!text) {
+          _ctx.ui.notify("Usage: /cccc-send [--group <id>] <message text>", "warning");
           return;
         }
+        const groupId = resolveGroup(groupOpt, _ctx);
+        if (!groupId) return;
         const conn = connections.get(groupId)!;
         try {
           const result = await conn.client.send({ groupId, text });
@@ -445,17 +511,15 @@ export default function (pi: ExtensionAPI) {
 
     // ---- /cccc-inbox command ----
     pi.registerCommand("cccc-inbox", {
-      description: "Show unread CCCC inbox messages",
-      handler: async (_args, _ctx) => {
+      description: "Show unread CCCC inbox messages. Usage: /cccc-inbox [--group <id>]",
+      handler: async (args, _ctx) => {
         if (connections.size === 0) {
           _ctx.ui.notify("CCCC: Not connected", "warning");
           return;
         }
-        const groupId = connections.keys().next().value;
-        if (!groupId) {
-          _ctx.ui.notify("CCCC: No connected groups", "warning");
-          return;
-        }
+        const { groupId: groupOpt } = parseGroupFlag(args);
+        const groupId = resolveGroup(groupOpt, _ctx);
+        if (!groupId) return;
         const conn = connections.get(groupId)!;
         try {
           const events = await conn.client.inboxList({

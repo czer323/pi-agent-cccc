@@ -1738,6 +1738,10 @@ function setupSlashTest() {
     groups: ["test-group"],
     actorId: null,
     pollIntervalMs: 3000,
+    autoDiscover: true,
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
+    defaultGroupId: null,
   });
   mockEnsureRegistered.mockResolvedValue("actor-123");
   mockInboxList.mockResolvedValue([]);
@@ -1750,13 +1754,14 @@ test("registers all slash commands on session_start", async () => {
   const pi = setupSlashTest();
   await triggerSessionStart(pi);
 
-  expect(pi.registerCommand).toHaveBeenCalledTimes(5);
+  expect(pi.registerCommand).toHaveBeenCalledTimes(6);
   const cmdNames = pi._registeredCommands.map((c: any) => c.name);
   expect(cmdNames).toContain("cccc-status");
   expect(cmdNames).toContain("cccc-actors");
   expect(cmdNames).toContain("cccc-send");
   expect(cmdNames).toContain("cccc-inbox");
   expect(cmdNames).toContain("cccc-rename");
+  expect(cmdNames).toContain("cccc-config");
 });
 
 test("cccc-status command returns actor ID and group info", async () => {
@@ -1887,4 +1892,223 @@ test("slash commands are not registered when no groups connected", async () => {
   await triggerSessionStart(pi);
 
   expect(pi.registerCommand).not.toHaveBeenCalled();
+});
+
+// ---------- /cccc-config command tests ----------
+
+test("cccc-config command is registered on session_start", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  const cmdNames = pi._registeredCommands.map((c: any) => c.name);
+  expect(cmdNames).toContain("cccc-config");
+});
+
+test("cccc-config command shows daemon host, port, groups, actor ID, title", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+
+  await triggerCommand(pi, "cccc-config");
+
+  const notifyText = pi._notify.mock.calls.map((c: any[]) => c[0]).join(" ");
+  expect(notifyText).toContain("Daemon: localhost:9765");
+  expect(notifyText).toContain("test-group");
+  expect(notifyText).toContain("actor-123");
+  expect(notifyText).toContain("Title: Pi Agent");
+  expect(notifyText).toContain("Poll: 3000ms");
+  expect(notifyText).toContain("Auto-discover: enabled");
+});
+
+test("cccc-config command shows multi-group connections", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "daemon.example.com",
+    daemonPort: 9765,
+    groups: ["group-a", "group-b"],
+    actorId: null,
+    pollIntervalMs: 5000,
+    autoDiscover: false,
+    agentTitle: "Custom Agent",
+    subAgentTitle: "Custom Sub",
+    defaultGroupId: null,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  await triggerCommand(pi, "cccc-config");
+
+  const notifyText = pi._notify.mock.calls.map((c: any[]) => c[0]).join(" ");
+  expect(notifyText).toContain("daemon.example.com");
+  expect(notifyText).toContain("9765");
+  expect(notifyText).toContain("group-a");
+  expect(notifyText).toContain("group-b");
+  expect(notifyText).toContain("Custom Agent");
+  expect(notifyText).toContain("Auto-discover: disabled");
+});
+
+test("cccc-config shows warning when not connected", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: [],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  // Commands not registered when no groups — nothing to test
+  expect(pi.registerCommand).not.toHaveBeenCalled();
+});
+
+// ---------- multi-group slash command tests ----------
+
+function setupMultiGroupSlashTest() {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["group-a", "group-b"],
+    actorId: null,
+    pollIntervalMs: 3000,
+    autoDiscover: false,
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
+    defaultGroupId: null,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+  mockInboxList.mockResolvedValue([]);
+  const pi = createMockPi();
+  mod(pi);
+  return pi;
+}
+
+test("cccc-status command lists all connected groups with actor IDs", async () => {
+  const pi = setupMultiGroupSlashTest();
+  await triggerSessionStart(pi);
+
+  await triggerCommand(pi, "cccc-status");
+
+  const notifyText = pi._notify.mock.calls.map((c: any[]) => c[0]).join(" ");
+  expect(notifyText).toContain("group-a");
+  expect(notifyText).toContain("group-b");
+});
+
+test("cccc-actors command accepts --group parameter with multiple groups", async () => {
+  const pi = setupMultiGroupSlashTest();
+  await triggerSessionStart(pi);
+  mockGroupShow.mockClear();
+
+  await triggerCommand(pi, "cccc-actors", "--group group-b");
+
+  expect(mockGroupShow).toHaveBeenCalledWith("group-b");
+});
+
+test("cccc-actors command shows message when multiple groups and no --group", async () => {
+  const pi = setupMultiGroupSlashTest();
+  await triggerSessionStart(pi);
+  mockGroupShow.mockClear();
+
+  await triggerCommand(pi, "cccc-actors", "");
+
+  expect(mockGroupShow).not.toHaveBeenCalled();
+  expect(pi._notify).toHaveBeenCalledWith(
+    expect.stringContaining("Multiple groups connected"),
+    "warning",
+  );
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("group-a"), "warning");
+  expect(pi._notify).toHaveBeenCalledWith(expect.stringContaining("group-b"), "warning");
+});
+
+test("cccc-inbox command accepts --group parameter with multiple groups", async () => {
+  const pi = setupMultiGroupSlashTest();
+  await triggerSessionStart(pi);
+  mockInboxList.mockClear();
+  mockInboxList.mockResolvedValue([{ id: "evt-1", by: "other", data: { text: "hello" } }]);
+
+  await triggerCommand(pi, "cccc-inbox", "--group group-b");
+
+  expect(mockInboxList).toHaveBeenCalledWith(expect.objectContaining({ groupId: "group-b" }));
+});
+
+test("cccc-inbox command shows message when multiple groups and no --group", async () => {
+  const pi = setupMultiGroupSlashTest();
+  await triggerSessionStart(pi);
+  mockInboxList.mockClear();
+
+  await triggerCommand(pi, "cccc-inbox", "");
+
+  expect(mockInboxList).not.toHaveBeenCalled();
+  expect(pi._notify).toHaveBeenCalledWith(
+    expect.stringContaining("Multiple groups connected"),
+    "warning",
+  );
+});
+
+test("cccc-send command accepts --group parameter with multiple groups", async () => {
+  const pi = setupMultiGroupSlashTest();
+  await triggerSessionStart(pi);
+  mockSend.mockClear();
+  mockSend.mockResolvedValue({ event: { id: "evt-1" }, ack_event: null });
+
+  await triggerCommand(pi, "cccc-send", "--group group-b hello from group b");
+
+  expect(mockSend).toHaveBeenCalledWith({
+    groupId: "group-b",
+    text: "hello from group b",
+  });
+});
+
+test("cccc-send command shows message when multiple groups and no --group", async () => {
+  const pi = setupMultiGroupSlashTest();
+  await triggerSessionStart(pi);
+  mockSend.mockClear();
+
+  await triggerCommand(pi, "cccc-send", "hello");
+
+  expect(mockSend).not.toHaveBeenCalled();
+  expect(pi._notify).toHaveBeenCalledWith(
+    expect.stringContaining("Multiple groups connected"),
+    "warning",
+  );
+});
+
+test("cccc-actors command works without --group when single group connected", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+  mockGroupShow.mockClear();
+
+  await triggerCommand(pi, "cccc-actors", "");
+
+  expect(mockGroupShow).toHaveBeenCalledWith("test-group");
+});
+
+test("cccc-inbox command works without --group when single group connected", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+  mockInboxList.mockClear();
+  mockInboxList.mockResolvedValue([{ id: "evt-1", by: "other", data: { text: "hello" } }]);
+
+  await triggerCommand(pi, "cccc-inbox", "");
+
+  expect(mockInboxList).toHaveBeenCalledWith(expect.objectContaining({ groupId: "test-group" }));
+});
+
+test("cccc-send command works without --group when single group connected", async () => {
+  const pi = setupSlashTest();
+  await triggerSessionStart(pi);
+  mockSend.mockClear();
+  mockSend.mockResolvedValue({ event: { id: "evt-1" }, ack_event: null });
+
+  await triggerCommand(pi, "cccc-send", "hello");
+
+  expect(mockSend).toHaveBeenCalledWith({
+    groupId: "test-group",
+    text: "hello",
+    to: undefined,
+  });
 });
