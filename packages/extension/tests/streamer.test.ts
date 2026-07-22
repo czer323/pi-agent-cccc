@@ -385,3 +385,52 @@ describe("InboxStreamer", () => {
     streamer.stop();
   });
 });
+
+test("calls onReconnect after successful reconnection", async () => {
+  const { client, eventsStream, queue } = createMocks();
+  const onReconnect = vi.fn();
+  const event = makeEvent({ id: "evt-1", by: "alice" });
+
+  // First call: stream that works, then ends → triggers reconnect
+  eventsStream
+    .mockReturnValueOnce(mockGenerator([makeEventStreamItem(event)]))
+    .mockReturnValueOnce(mockGenerator([]));
+
+  const streamer = new InboxStreamer({
+    client,
+    groupId: testGroupId,
+    actorId: testActorId,
+    queue,
+    onFallback: vi.fn(),
+    onReconnect,
+  });
+
+  streamer.start();
+
+  // Wait for the first mock to be consumed (event delivered)
+  await vi.advanceTimersByTimeAsync(1100);
+  // After retry delay + reconnection, onReconnect should fire
+  await vi.waitFor(() => expect(onReconnect).toHaveBeenCalledTimes(1));
+
+  streamer.stop();
+});
+
+test("onReconnect is not called on first successful start", async () => {
+  const { client, eventsStream, queue } = createMocks();
+  const onReconnect = vi.fn();
+  eventsStream.mockReturnValue(mockGenerator([]));
+
+  const streamer = new InboxStreamer({
+    client,
+    groupId: testGroupId,
+    actorId: testActorId,
+    queue,
+    onFallback: vi.fn(),
+    onReconnect,
+  });
+
+  streamer.start();
+  await vi.advanceTimersByTimeAsync(100);
+  expect(onReconnect).not.toHaveBeenCalled();
+  streamer.stop();
+});
