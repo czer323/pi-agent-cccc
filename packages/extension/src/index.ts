@@ -67,6 +67,8 @@ function deriveChildActorId(parentActorId: string): string {
 export default function (pi: ExtensionAPI) {
   const connections = new Map<string, GroupConnection>();
   let inboxQueue: InboxQueue | null = null;
+  // Captured from session_start for use in session_shutdown (no ctx param in shutdown event)
+  let sessionCtx: ExtensionContext | null = null;
 
   /**
    * Register cccc_send and cccc_reply tools so the agent can send messages
@@ -517,6 +519,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("session_start", async (_event, ctx) => {
+    sessionCtx = ctx;
     const config = loadConfig();
 
     // Resolve effective groups: explicit config, auto-discovery, or default fallback
@@ -644,6 +647,9 @@ export default function (pi: ExtensionAPI) {
                 groupId,
                 text: `Agent ${actorId} online`,
               });
+              if (ctx.hasUI) {
+                ctx.ui.notify("[cccc-bridge] Reconnected to daemon", "info");
+              }
               console.log(`[cccc-bridge] Re-registered actor "${actorId}" after reconnect`);
             } catch (err) {
               console.error(`[cccc-bridge] Failed to send online status after reconnect:`, err);
@@ -715,6 +721,9 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async () => {
+    if (sessionCtx?.hasUI) {
+      sessionCtx.ui.setStatus("cccc", "disconnected");
+    }
     for (const [groupId, conn] of connections) {
       conn.streamer?.stop();
       conn.poller?.stop();
