@@ -18,6 +18,8 @@ export interface InboxStreamerOptions {
   actorId: string;
   queue: InboxQueue;
   onFallback: () => void;
+  /** Callback fired when stream reconnects after a failure. */
+  onReconnect?: () => void;
   seenIds?: Set<string>;
 }
 
@@ -32,6 +34,7 @@ export class InboxStreamer {
   private _options: InboxStreamerOptions;
   private _lastError: string | null = null;
   private _fallbackTriggered = false;
+  private _hadEverConnected = false;
 
   constructor(options: InboxStreamerOptions) {
     this._options = options;
@@ -46,6 +49,7 @@ export class InboxStreamer {
     if (this._running) return;
     this._running = true;
     this._fallbackTriggered = false;
+    this._hadEverConnected = false;
     this._abortController = new AbortController();
     this._run(0).catch((err) => console.error("[cccc-bridge] InboxStreamer fatal error:", err));
   }
@@ -71,7 +75,12 @@ export class InboxStreamer {
         kinds: ["chat.message", "chat.cross_group_receipt"],
         signal: abortSignal,
       });
+      const wasReconnect = this._hadEverConnected;
+      this._hadEverConnected = true;
       this._lastError = null;
+      if (wasReconnect) {
+        this._options.onReconnect?.();
+      }
 
       for await (const item of stream) {
         if (!this._running) break;

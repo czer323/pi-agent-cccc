@@ -478,3 +478,47 @@ describe("InboxPoller", () => {
     );
   });
 });
+
+test("calls onReconnect when consecutiveErrors resets to 0 after successful poll", async () => {
+  const { client, queue } = createMocks();
+  const onReconnect = vi.fn();
+
+  // First call fails
+  vi.mocked(client.inboxList).mockRejectedValueOnce(new Error("network error"));
+
+  const poller = new InboxPoller({
+    client,
+    groupId: testGroupId,
+    actorId: testActorId,
+    pollIntervalMs: testPollInterval,
+    queue,
+    onReconnect,
+  });
+
+  // First poll fails → increment consecutiveErrors
+  await (poller as unknown as { poll(): Promise<void> }).poll();
+  expect(onReconnect).not.toHaveBeenCalled();
+
+  // Second poll succeeds → reset consecutiveErrors
+  vi.mocked(client.inboxList).mockResolvedValue([]);
+  await (poller as unknown as { poll(): Promise<void> }).poll();
+  expect(onReconnect).toHaveBeenCalledTimes(1);
+});
+
+test("onReconnect is not called on first successful poll (no prior errors)", async () => {
+  const { client, queue } = createMocks();
+  const onReconnect = vi.fn();
+  vi.mocked(client.inboxList).mockResolvedValue([]);
+
+  const poller = new InboxPoller({
+    client,
+    groupId: testGroupId,
+    actorId: testActorId,
+    pollIntervalMs: testPollInterval,
+    queue,
+    onReconnect,
+  });
+
+  await (poller as unknown as { poll(): Promise<void> }).poll();
+  expect(onReconnect).not.toHaveBeenCalled();
+});

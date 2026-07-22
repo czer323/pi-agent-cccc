@@ -2,6 +2,7 @@ import { vi, expect, test, beforeEach } from "vite-plus/test";
 import fs from "node:fs";
 import path from "node:path";
 import mod from "../src/index.ts";
+import { InboxStreamer } from "../src/streamer.ts";
 
 // ---------- hoisted mock fns (shared between vi.mock factories and tests) ----------
 
@@ -75,14 +76,16 @@ vi.mock("../src/actor.ts", async (importOriginal) => {
 
 vi.mock("../src/inbox.ts", () => ({
   // Must use a regular function (not arrow) so it works with `new InboxPoller()`
-  InboxPoller: vi.fn(function () {
+  InboxPoller: vi.fn(function (opts: any) {
+    (globalThis as any).__pollerOnReconnect = opts.onReconnect;
     return { start: mockPollerStart, stop: mockPollerStop };
   }),
 }));
 
 vi.mock("../src/streamer.ts", () => ({
   // Must use a regular function (not arrow) so it works with `new InboxStreamer()`
-  InboxStreamer: vi.fn(function () {
+  InboxStreamer: vi.fn(function (opts: any) {
+    (globalThis as any).__streamerOnReconnect = opts.onReconnect;
     return { start: mockStreamerStart, stop: mockStreamerStop };
   }),
 }));
@@ -100,6 +103,8 @@ vi.mock("../src/discovery.ts", () => ({
 
 beforeEach(() => {
   vi.resetAllMocks();
+  delete (globalThis as any).__pollerOnReconnect;
+  delete (globalThis as any).__streamerOnReconnect;
   mockConnect.mockResolvedValue(undefined);
   mockSend.mockResolvedValue({ event: { id: "evt-1" }, ack_event: null });
   mockReply.mockResolvedValue({ event: { id: "reply-evt-1" }, ack_event: null });
@@ -315,6 +320,123 @@ test("broadcast failure on session_start does not crash", async () => {
   // Streamer should still start despite broadcast failure
   expect(mockStreamerStart).toHaveBeenCalledTimes(1);
   expect(mockEnsureRegistered).toHaveBeenCalledTimes(1);
+});
+
+// ---------- onReconnect tests ----------
+
+test("InboxStreamer receives onReconnect callback in options", async () => {
+  const pi = createMockPi();
+  mockLoadConfig.mockReturnValue({
+    groups: ["test-group"],
+    autoDiscover: false,
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    pollIntervalMs: 3000,
+    actorId: null,
+    defaultGroupId: null,
+  });
+  mockEnsureRegistered.mockResolvedValue("test-actor-01");
+  mod(pi);
+
+  await triggerSessionStart(pi);
+
+  // InboxStreamer constructor should have been called with onReconnect
+  const cb = (globalThis as any).__streamerOnReconnect;
+  expect(cb).toBeDefined();
+  expect(typeof cb).toBe("function");
+});
+
+test("InboxPoller onReconnect callback works via fallback path", async () => {
+  const pi = createMockPi();
+  mockLoadConfig.mockReturnValue({
+    groups: ["test-group"],
+    autoDiscover: false,
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    pollIntervalMs: 3000,
+    actorId: null,
+    defaultGroupId: null,
+  });
+  mockEnsureRegistered.mockResolvedValue("test-actor-01");
+  mod(pi);
+
+  await triggerSessionStart(pi);
+
+  // Trigger the fallback to create the poller
+  const streamerOpts = vi.mocked(InboxStreamer).mock.calls[0][0];
+  streamerOpts.onFallback();
+
+  // Poller should have been created with onReconnect
+  const cb = (globalThis as any).__pollerOnReconnect;
+  expect(cb).toBeDefined();
+  expect(typeof cb).toBe("function");
+
+  // Invoke it to verify it works
+  mockRegisterActor.mockClear();
+  mockSend.mockClear();
+  await cb();
+  expect(mockRegisterActor).toHaveBeenCalled();
+  expect(mockSend).toHaveBeenCalled();
+});
+
+test("onReconnect callback re-registers actor and sends online broadcast", async () => {
+  const pi = createMockPi();
+  mockLoadConfig.mockReturnValue({
+    groups: ["test-group"],
+    autoDiscover: false,
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    pollIntervalMs: 3000,
+    actorId: null,
+    defaultGroupId: null,
+  });
+  mockEnsureRegistered.mockResolvedValue("test-actor-01");
+  mod(pi);
+
+  await triggerSessionStart(pi);
+
+  // Invoke the onReconnect callback from streamer
+  const cb = (globalThis as any).__streamerOnReconnect;
+  await cb();
+
+  // Should have re-registered the actor
+  expect(mockRegisterActor).toHaveBeenCalledWith({
+    groupId: "test-group",
+    actorId: "test-actor-01",
+    runtime: "custom",
+    runner: "headless",
+    title: "Pi Agent",
+  });
+
+  // Should have sent online broadcast
+  expect(mockSend).toHaveBeenCalledWith({
+    groupId: "test-group",
+    text: "Agent test-actor-01 online",
+  });
+});
+
+test("onReconnect callback failure does not crash", async () => {
+  const pi = createMockPi();
+  mockLoadConfig.mockReturnValue({
+    groups: ["test-group"],
+    autoDiscover: false,
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    pollIntervalMs: 3000,
+    actorId: null,
+    defaultGroupId: null,
+  });
+  mockEnsureRegistered.mockResolvedValue("test-actor-01");
+  mod(pi);
+
+  await triggerSessionStart(pi);
+
+  // Make registerActor throw
+  mockRegisterActor.mockRejectedValueOnce(new Error("registration failed"));
+
+  // Invoke the onReconnect callback - should not throw
+  const cb = (globalThis as any).__streamerOnReconnect;
+  await expect(cb()).resolves.toBeUndefined();
 });
 
 // ---------- shutdown tests ----------

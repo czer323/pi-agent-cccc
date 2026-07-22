@@ -9,6 +9,8 @@ export interface InboxPollerOptions {
   queue: InboxQueue;
   /** Shared deduplication set (e.g. from InboxStreamer) for fallback continuity. */
   seenIds?: Set<string>;
+  /** Callback fired when connection to daemon is restored after errors. */
+  onReconnect?: () => void;
 }
 
 /**
@@ -133,6 +135,7 @@ export class InboxPoller {
       });
       // Success — reset error state
       if (this.consecutiveErrors > 0) {
+        this.options.onReconnect?.();
         this.consecutiveErrors = 0;
         this.lastErrorMsg = null;
       }

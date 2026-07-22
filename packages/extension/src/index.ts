@@ -396,6 +396,26 @@ export default function (pi: ExtensionAPI) {
           // Shared dedup set: streamer → poller fallback continuity
           const seenIds = new Set<string>();
 
+          // Reconnection handler: re-register actor and broadcast online
+          const onReconnect = async () => {
+            try {
+              await client.registerActor({
+                groupId,
+                actorId,
+                runtime: "custom",
+                runner: "headless",
+                title: "Pi Agent",
+              });
+              await client.send({
+                groupId,
+                text: `Agent ${actorId} online`,
+              });
+              console.log(`[cccc-bridge] Re-registered actor "${actorId}" after reconnect`);
+            } catch (err) {
+              console.error(`[cccc-bridge] Reconnect handler failed for "${actorId}":`, err);
+            }
+          };
+
           // Fallback polling starter
           let poller: InboxPoller | null = null;
           const startPoller = () => {
@@ -406,6 +426,7 @@ export default function (pi: ExtensionAPI) {
               actorId,
               pollIntervalMs: config.pollIntervalMs,
               queue: inboxQueue!,
+              onReconnect,
               seenIds,
             });
             poller.start();
@@ -418,6 +439,7 @@ export default function (pi: ExtensionAPI) {
             actorId,
             queue: inboxQueue!,
             onFallback: startPoller,
+            onReconnect,
             seenIds,
           });
           streamer.start();
