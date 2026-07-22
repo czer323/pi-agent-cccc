@@ -476,11 +476,15 @@ export default function (pi: ExtensionAPI) {
               }
             }
 
-            await client.send({
-              groupId,
-              text: `Agent ${actorId} online`,
-            });
-            console.log(`[cccc-bridge] Re-registered actor "${actorId}" after reconnect`);
+            try {
+              await client.send({
+                groupId,
+                text: `Agent ${actorId} online`,
+              });
+              console.log(`[cccc-bridge] Re-registered actor "${actorId}" after reconnect`);
+            } catch (err) {
+              console.error(`[cccc-bridge] Failed to send online status after reconnect:`, err);
+            }
           };
 
           // Fallback polling starter
