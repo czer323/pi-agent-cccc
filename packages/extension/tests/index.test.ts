@@ -270,6 +270,51 @@ test("connection failure degrades gracefully", async () => {
   expect(mockStreamerStart).not.toHaveBeenCalled();
 });
 
+// ---------- lifecycle broadcast tests ----------
+
+test("session_start sends online broadcast after registration", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  expect(mockSend).toHaveBeenCalledWith(
+    expect.objectContaining({
+      groupId: "test-group",
+      text: "Agent actor-123 online",
+    }),
+  );
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
+});
+
+test("broadcast failure on session_start does not crash", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+  mockSend.mockRejectedValue(new Error("send failed"));
+
+  const pi = createMockPi();
+  mod(pi);
+  await expect(triggerSessionStart(pi)).resolves.toBeUndefined();
+
+  // Streamer should still start despite broadcast failure
+  expect(mockStreamerStart).toHaveBeenCalledTimes(1);
+  expect(mockEnsureRegistered).toHaveBeenCalledTimes(1);
+});
+
 // ---------- shutdown tests ----------
 
 test("session_shutdown removes actor before disconnecting for single group", async () => {
@@ -338,6 +383,56 @@ test("session_shutdown actorRemove failure logs but does not block shutdown", as
   expect(mockActorRemove).toHaveBeenCalledTimes(1);
   expect(mockStreamerStop).toHaveBeenCalledTimes(1);
   expect(mockDisconnect).toHaveBeenCalledTimes(1);
+});
+
+test("session_shutdown sends offline broadcast before removal", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  await triggerSessionShutdown(pi);
+
+  expect(mockSend).toHaveBeenCalledWith(
+    expect.objectContaining({
+      groupId: "test-group",
+      text: "Agent actor-123 going offline",
+    }),
+  );
+  expect(mockActorRemove).toHaveBeenCalledWith("test-group", "actor-123");
+});
+
+test("broadcast failure on session_shutdown does not block shutdown", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  // Make send fail for the offline broadcast
+  mockSend.mockRejectedValue(new Error("send failed"));
+
+  await expect(triggerSessionShutdown(pi)).resolves.toBeUndefined();
+
+  // Actor removal and disconnect should still happen
+  expect(mockActorRemove).toHaveBeenCalledWith("test-group", "actor-123");
+  expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  expect(mockStreamerStop).toHaveBeenCalledTimes(1);
 });
 
 // ---------- UI tests ----------
@@ -865,7 +960,11 @@ test("cccc_send returns error when group not connected", async () => {
   );
 
   expect(result.content[0].text).toContain("Error");
-  expect(mockSend).not.toHaveBeenCalled();
+  // mockSend is called once for online broadcast during session_start
+  expect(mockSend).toHaveBeenCalledTimes(1);
+  expect(mockSend).toHaveBeenCalledWith(
+    expect.objectContaining({ text: expect.stringContaining("online") }),
+  );
 });
 
 test("cccc_reply returns error when group not connected", async () => {
