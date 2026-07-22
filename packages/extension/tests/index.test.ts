@@ -389,6 +389,8 @@ test("onReconnect callback re-registers actor and sends online broadcast", async
     pollIntervalMs: 3000,
     actorId: null,
     defaultGroupId: null,
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
   });
   mockEnsureRegistered.mockResolvedValue("test-actor-01");
   mod(pi);
@@ -667,7 +669,6 @@ test("auto-discovery connects to all discovered groups", async () => {
   expect(mockConnect).toHaveBeenCalledTimes(3);
   expect(mockStreamerStart).toHaveBeenCalledTimes(2);
 });
-
 test("auto-discovery falls back to defaultGroupId when no matches found", async () => {
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
@@ -677,6 +678,8 @@ test("auto-discovery falls back to defaultGroupId when no matches found", async 
     pollIntervalMs: 3000,
     autoDiscover: true,
     defaultGroupId: "lobby",
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
   });
   mockDiscoverGroups.mockResolvedValue([]);
   mockEnsureRegistered.mockResolvedValue("actor-123");
@@ -692,6 +695,7 @@ test("auto-discovery falls back to defaultGroupId when no matches found", async 
     expect.anything(),
     expect.objectContaining({ defaultGroupId: "lobby" }),
     "lobby",
+    expect.objectContaining({ title: "Pi Agent" }),
   );
 });
 
@@ -779,16 +783,17 @@ test("explicit groups take precedence over auto-discovery", async () => {
   expect(mockStreamerStart).toHaveBeenCalledTimes(1);
 });
 
-// ---------- sub-agent tests ----------
-
 test("sub-agent detects parent via env var and registers child actor", async () => {
   process.env["CCCC_PARENT_ACTOR_test-group"] = "parent-actor-123";
+
   mockLoadConfig.mockReturnValue({
     daemonHost: "localhost",
     daemonPort: 9765,
     groups: ["test-group"],
     actorId: null,
     pollIntervalMs: 3000,
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
   });
 
   const pi = createMockPi();
@@ -917,12 +922,13 @@ test("registers all tools on parent session_start", async () => {
   mod(pi);
   await triggerSessionStart(pi);
 
-  expect(pi.registerTool).toHaveBeenCalledTimes(4);
+  expect(pi.registerTool).toHaveBeenCalledTimes(5);
   const toolNames = pi._registeredTools.map((t: any) => t.name);
   expect(toolNames).toContain("cccc_send");
   expect(toolNames).toContain("cccc_reply");
   expect(toolNames).toContain("cccc_whoami");
   expect(toolNames).toContain("cccc_list_actors");
+  expect(toolNames).toContain("cccc_rename");
 });
 
 test("cccc_send tool has correct parameter schema", async () => {
@@ -1389,6 +1395,88 @@ test("cccc_list_actors tool warns when multiple groups connected", async () => {
   } finally {
     warnSpy.mockRestore();
   }
+});
+
+// ---------- cccc_rename tool tests ----------
+
+test("cccc_rename tool registered on session_start", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const renameTool = pi._registeredTools.find((t: any) => t.name === "cccc_rename");
+  expect(renameTool).toBeDefined();
+});
+
+test("cccc_rename tool has title parameter", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const renameTool = pi._registeredTools.find((t: any) => t.name === "cccc_rename");
+  expect(renameTool).toBeDefined();
+  const props = renameTool.parameters.properties;
+  expect(props).toBeDefined();
+  expect(props.title).toBeDefined();
+  expect(props.title.type).toBe("string");
+});
+
+test("cccc_rename tool registers new actor with updated title", async () => {
+  mockLoadConfig.mockReturnValue({
+    daemonHost: "localhost",
+    daemonPort: 9765,
+    groups: ["test-group"],
+    actorId: null,
+    pollIntervalMs: 3000,
+    agentTitle: "Pi Agent",
+    subAgentTitle: "Pi Sub-Agent",
+  });
+  mockEnsureRegistered.mockResolvedValue("actor-123");
+
+  const pi = createMockPi();
+  mod(pi);
+  await triggerSessionStart(pi);
+
+  const renameTool = pi._registeredTools.find((t: any) => t.name === "cccc_rename");
+  expect(renameTool).toBeDefined();
+
+  const result = await renameTool.execute(
+    "call-1",
+    { title: "New Agent Name" },
+    undefined,
+    undefined,
+    {},
+  );
+
+  // Should call registerActor with new title
+  expect(mockRegisterActor).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "New Agent Name",
+    }),
+  );
+  expect(result.content[0].text).toContain("New Agent Name");
 });
 
 test("cccc_send warns when multiple groups connected and no groupId specified", async () => {

@@ -84,3 +84,31 @@ describe("loadConfig", () => {
     expect(config.defaultGroupId).toBeNull();
   });
 });
+
+describe("agentTitle", () => {
+  test('defaults to "Pi Agent" when CCCC_AGENT_TITLE not set', () => {
+    delete process.env.CCCC_AGENT_TITLE;
+    const config = loadConfig();
+    expect(config.agentTitle).toBe("Pi Agent");
+  });
+
+  test("reads from CCCC_AGENT_TITLE env var", () => {
+    process.env.CCCC_AGENT_TITLE = "My Custom Agent";
+    const config = loadConfig();
+    expect(config.agentTitle).toBe("My Custom Agent");
+  });
+});
+
+describe("subAgentTitle", () => {
+  test('defaults to "Pi Sub-Agent" when CCCC_SUB_AGENT_TITLE not set', () => {
+    delete process.env.CCCC_SUB_AGENT_TITLE;
+    const config = loadConfig();
+    expect(config.subAgentTitle).toBe("Pi Sub-Agent");
+  });
+
+  test("reads from CCCC_SUB_AGENT_TITLE env var", () => {
+    process.env.CCCC_SUB_AGENT_TITLE = "My Sub-Agent";
+    const config = loadConfig();
+    expect(config.subAgentTitle).toBe("My Sub-Agent");
+  });
+});
