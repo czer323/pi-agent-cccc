@@ -449,6 +449,7 @@ export default function (pi: ExtensionAPI) {
     // Register tools for both parent and sub-agent sessions when connected
     if (connections.size > 0) {
       registerTools();
+      console.log("[cccc-bridge] CCCC coordination skill available: skill://cccc-coordination");
     }
   });
 

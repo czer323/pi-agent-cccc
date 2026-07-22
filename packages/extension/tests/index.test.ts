@@ -1,4 +1,6 @@
 import { vi, expect, test, beforeEach } from "vite-plus/test";
+import fs from "node:fs";
+import path from "node:path";
 import mod from "../src/index.ts";
 
 // ---------- hoisted mock fns (shared between vi.mock factories and tests) ----------
@@ -1338,5 +1340,62 @@ test("cccc_reply warns when multiple groups connected and no groupId specified",
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Multiple groups connected"));
   } finally {
     warnSpy.mockRestore();
+  }
+});
+
+// ---------- coordination skill tests ----------
+
+test("cccc-coordination skill file exists at packages/extension/skills/cccc-coordination.md", () => {
+  const skillPath = path.resolve(__dirname, "../skills/cccc-coordination.md");
+  expect(fs.existsSync(skillPath)).toBe(true);
+});
+
+test("cccc-coordination skill file covers all 7 required topics", () => {
+  const skillPath = path.resolve(__dirname, "../skills/cccc-coordination.md");
+  const content = fs.readFileSync(skillPath, "utf-8");
+
+  // Topic 1: cccc_send vs cccc_reply guidance
+  expect(content).toMatch(/cccc_send/);
+  expect(content).toMatch(/cccc_reply/);
+  expect(content).toMatch(/reply/);
+
+  // Topic 2: Addressing messages (@all, @peers, @foreman, specific actor IDs)
+  expect(content).toMatch(/@all|@peers|@foreman|actor.?ID/i);
+
+  // Topic 3: cccc_whoami usage
+  expect(content).toMatch(/cccc_whoami|who.?am/i);
+
+  // Topic 4: cccc_list_actors usage
+  expect(content).toMatch(/cccc_list_actors|list.?actor/i);
+
+  // Topic 5: Interpreting incoming messages (provenance, reply-required)
+  expect(content).toMatch(/reply.?required|provenance|incoming/i);
+
+  // Topic 6: Best practices (concise, reply_required, acknowledge)
+  expect(content).toMatch(/concise|best.?practice|acknowledg/i);
+
+  // Topic 7: Sub-agent pattern (spawn, report back via cccc_send)
+  expect(content).toMatch(/sub.?agent|spawn|report.*result|cccc_send/i);
+});
+
+test("session_start logs a hint that the coordination skill exists", async () => {
+  const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    mockLoadConfig.mockReturnValue({
+      daemonHost: "localhost",
+      daemonPort: 9765,
+      groups: ["test-group"],
+      actorId: null,
+      pollIntervalMs: 3000,
+    });
+    mockEnsureRegistered.mockResolvedValue("actor-123");
+
+    const pi = createMockPi();
+    mod(pi);
+    await triggerSessionStart(pi);
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("cccc-coordination"));
+  } finally {
+    logSpy.mockRestore();
   }
 });
