@@ -1,6 +1,6 @@
 // oxlint-disable typescript/unbound-method
 import { expect, test, vi, describe, beforeEach } from "vite-plus/test";
-import { getActorId, generateActorId, ensureRegistered } from "../src/actor.ts";
+import { getActorId, generateActorId, buildActorId, ensureRegistered } from "../src/actor.ts";
 import type { BridgeConfig } from "../src/config.ts";
 import type { CCCCBridgeClient } from "../src/client.ts";
 import { BridgeClientError } from "../src/types.ts";
@@ -37,6 +37,48 @@ describe("generateActorId", () => {
     const id = generateActorId();
     expect(id).toMatch(/^pi-/);
     // Should have at least three hyphens: role-machine-project-random
+    expect(id.split("-").length).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("buildActorId", () => {
+  test("returns ID unchanged when under 32 chars", () => {
+    const id = buildActorId("pi", "m1", "proj", "abc123");
+    expect(id).toBe("pi-m1-proj-abc123");
+    expect(id.length).toBeLessThanOrEqual(32);
+  });
+
+  test("truncates long project name to fit 32 chars", () => {
+    const id = buildActorId("pi", "ubuntu", "pi-agent-cccc-test-long", "abc123");
+    expect(id.length).toBeLessThanOrEqual(32);
+    // Should end with the suffix
+    expect(id).toMatch(/-abc123$/);
+    // Should start with role-machine
+    expect(id).toMatch(/^pi-ubuntu-/);
+  });
+
+  test("preserves suffix when truncating", () => {
+    const suffix = "xyz789";
+    const id = buildActorId(
+      "pi",
+      "truenas",
+      "this-is-a-very-long-project-name-that-exceeds-limit",
+      suffix,
+    );
+    expect(id).toMatch(new RegExp(`${suffix}$`));
+    expect(id.length).toBeLessThanOrEqual(32);
+  });
+
+  test("handles exactly 32 char boundary", () => {
+    const id = buildActorId("pi", "truenas", "pi-agent-cccc", "abc123");
+    expect(id).toBe("pi-truenas-pi-agent-cccc-abc123");
+    expect(id.length).toBe(31);
+  });
+
+  test("minimum project length of 1 when heavily constrained", () => {
+    const id = buildActorId("role-mach", "x", "project", "suffix");
+    expect(id.length).toBeLessThanOrEqual(32);
+    // Should still have at least 1 char of project
     expect(id.split("-").length).toBeGreaterThanOrEqual(4);
   });
 });

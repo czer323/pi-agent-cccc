@@ -32,10 +32,37 @@ function getProjectName(): string {
 }
 
 /**
+ * Maximum actor ID length enforced by the CCCC daemon.
+ */
+export const MAX_ACTOR_ID_LENGTH = 32;
+
+/**
+ * Build an actor ID from pre-cleaned components, truncating the project name
+ * if the total ID would exceed {@link MAX_ACTOR_ID_LENGTH}.
+ *
+ * The random suffix is always preserved; only the project portion is shortened.
+ */
+export function buildActorId(
+  role: string,
+  machine: string,
+  project: string,
+  suffix: string,
+): string {
+  const id = `${role}-${machine}-${project}-${suffix}`;
+  if (id.length <= MAX_ACTOR_ID_LENGTH) return id;
+  // Truncate the project part to fit within the limit
+  const overhead = role.length + 1 + machine.length + 1 + 1 + suffix.length;
+  const maxProject = MAX_ACTOR_ID_LENGTH - overhead;
+  const truncated = project.slice(0, Math.max(1, maxProject));
+  return `${role}-${machine}-${truncated}-${suffix}`;
+}
+/**
  * Generate a unique actor ID per session in the format:
  * `<role>-<machine>-<project>-<random6>`
  *
  * The random suffix ensures every session gets a unique ID.
+ * The project name is automatically truncated if the total would exceed
+ * {@link MAX_ACTOR_ID_LENGTH} (32 chars).
  *
  * @param opts - Optional overrides for role, machine, and project.
  *   - `role`: from `CCCC_AGENT_ROLE` env, defaults to `"pi"`
@@ -56,7 +83,7 @@ export function generateActorId(opts?: {
       .replace(/[^a-zA-Z0-9-]/g, "")
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "");
-  return `${clean(role)}-${clean(machine)}-${clean(project)}-${suffix}`;
+  return buildActorId(clean(role), clean(machine), clean(project), suffix);
 }
 
 /**
